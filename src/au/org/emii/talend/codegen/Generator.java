@@ -1,6 +1,5 @@
 package au.org.emii.talend.codegen;
 
-import java.io.File;
 import java.lang.reflect.InvocationTargetException;
 import java.util.ArrayList;
 import java.util.EnumMap;
@@ -8,21 +7,27 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-import org.eclipse.core.resources.IProject;
-import org.eclipse.core.runtime.IProgressMonitor;
+import org.apache.log4j.Logger;
+import org.eclipse.core.resources.IFile;
+import org.eclipse.core.resources.IMarker;
+import org.eclipse.core.resources.IResource;
+import org.eclipse.core.runtime.CoreException;
+import org.eclipse.core.runtime.IStatus;
 import org.eclipse.core.runtime.NullProgressMonitor;
-import org.eclipse.core.runtime.Path;
+import org.eclipse.core.runtime.jobs.IJobChangeEvent;
+import org.eclipse.core.runtime.jobs.Job;
+import org.eclipse.core.runtime.jobs.JobChangeAdapter;
 import org.eclipse.equinox.app.IApplication;
 import org.eclipse.equinox.app.IApplicationContext;
-import org.eclipse.ui.dialogs.IOverwriteQuery;
-import org.eclipse.ui.wizards.datatransfer.IImportStructureProvider;
-import org.eclipse.ui.wizards.datatransfer.ImportOperation;
 import org.talend.commons.CommonsPlugin;
 import org.talend.commons.exception.PersistenceException;
-import org.talend.commons.utils.workbench.resources.ResourceUtils;
+import org.talend.commons.exception.SystemException;
 import org.talend.core.CorePlugin;
+import org.talend.core.GlobalServiceRegister;
+import org.talend.core.IService;
 import org.talend.core.context.Context;
 import org.talend.core.context.RepositoryContext;
+import org.talend.core.model.components.IComponentsFactory;
 import org.talend.core.model.general.Project;
 import org.talend.core.model.genhtml.FileCopyUtils;
 import org.talend.core.model.properties.ProcessItem;
@@ -32,23 +37,28 @@ import org.talend.core.model.repository.ERepositoryObjectType;
 import org.talend.core.model.repository.IRepositoryViewObject;
 import org.talend.core.repository.model.ProxyRepositoryFactory;
 import org.talend.core.repository.model.RepositoryFactoryProvider;
-import org.talend.core.repository.utils.XmiResourceManager;
 import org.talend.designer.codegen.CodeGenInit;
+import org.talend.designer.codegen.CodeGeneratorActivator;
+import org.talend.designer.codegen.ICodeGeneratorService;
+import org.talend.designer.codegen.ITalendSynchronizer;
+import org.talend.designer.codegen.components.ui.IComponentPreferenceConstant;
 import org.talend.designer.core.model.utils.emf.talendfile.ContextParameterType;
 import org.talend.designer.runprocess.IProcessor;
+import org.talend.designer.runprocess.ItemCacheManager;
 import org.talend.designer.runprocess.ProcessorException;
 import org.talend.designer.runprocess.ProcessorUtilities;
 import org.talend.repository.documentation.ArchiveFileExportOperationFullPath;
 import org.talend.repository.documentation.ExportFileResource;
-import org.talend.repository.ui.actions.importproject.FilterFileSystemStructureProvider;
-import org.talend.repository.ui.actions.importproject.ImportProjectsUtilities;
-import org.talend.repository.ui.utils.AfterImportProjectUtil;
+import org.talend.repository.model.ComponentsFactoryProvider;
 import org.talend.repository.ui.wizards.exportjob.JavaJobExportReArchieveCreator;
 import org.talend.repository.ui.wizards.exportjob.scriptsmanager.JobJavaScriptsManager;
 import org.talend.repository.ui.wizards.exportjob.scriptsmanager.JobScriptsManager.ExportChoice;
 
 public class Generator implements IApplication {
-	private ProxyRepositoryFactory repository; 
+	private static Logger log = Logger.getLogger(Generator.class);
+	
+	private ProxyRepositoryFactory repository;
+	
 	private Project project; 
 
 	@Override
@@ -58,10 +68,13 @@ public class Generator implements IApplication {
 		String jobName = Params.getMandatoryStringOption("-jobName");
 		String projectDir = Params.getMandatoryStringOption("-projectDir");
 		String targetDir = Params.getMandatoryStringOption("-targetDir");
-		String version = Params.getMandatoryStringOption("-version");
+		String version = Params.getStringOption("-version", "Latest");
+		String componentDir = Params.getStringOption("-componentDir", "");
 		
 	    // Get export options 
 		Map<ExportChoice, Object> exportChoiceMap = getExportOptions();
+		
+		log.info("Building " + jobName + "...");
 		
 		// Let talend services know we are running in headless mode
 		// so they don't use ui stuff like messageboxes for exceptions
@@ -74,20 +87,27 @@ public class Generator implements IApplication {
        	project = ProjectUtils.importProject(projectDir);
 
        	// Log on to project
-        System.out.println("Logging onto " + project.getLabel() + "...");
+       	log.info("Logging onto " + project.getLabel() + "...");
 
         repository.logOnProject(project, new NullProgressMonitor());
         
         //Initialise code generation engine
-        System.out.println("Initialising code generation engine...");
+        log.info("Initialising code generation engine...");
 
         initCodeGenerationEngine();
+        
+        //Load user components if applicable
+        if (!componentDir.trim().equals("")) {
+            log.info("Loading user components...");
+
+            loadUserComponents(componentDir);
+        }
         
         // Export the job
 		exportJob(jobName, targetDir, version, exportChoiceMap);
 
 		// Log off the project
-        System.out.println("Logging off " + project.getLabel() + "...");
+		log.info("Logging off " + project.getLabel() + "...");
 		
 		repository.logOffProject();
 		
@@ -110,62 +130,93 @@ public class Generator implements IApplication {
 
 	// Build export file
 	private void exportJob(String jobName, String targetDir, String version,
-			Map<ExportChoice, Object> exportChoiceMap) throws PersistenceException,
-			ProcessorException, InvocationTargetException, InterruptedException {
+			Map<ExportChoice, Object> exportChoiceMap) throws ProcessorException, InvocationTargetException, InterruptedException, SystemException, CoreException {
 
-		System.out.println("Exporting " + jobName + "...");
+		log.info("Exporting " + jobName + "...");
 
 		// Get job to build
-        IRepositoryViewObject job = getJob(jobName, version);
+		ProcessItem job = getJob(jobName, version);
 
         // Create the job script manager that performs the build
-        
 		JobJavaScriptsManager manager = new JobJavaScriptsManager(exportChoiceMap, "Default", "Unix", 
 				IProcessor.NO_STATISTICS, IProcessor.NO_TRACES);
 		
-		manager.setDestinationPath(targetDir + "/" + job.getLabel() + "_" + version + ".zip");
+		manager.setDestinationPath(targetDir + "/" + job.getProperty().getLabel() + "_" + version + ".zip");
 		manager.setContextEditableResultValuesList(new ArrayList<ContextParameterType>());
 		manager.setMultiNodes(false);
-		manager.setJobVersion(version);
-		manager.setBundleVersion(version);
+		manager.setJobVersion(job.getProperty().getVersion());
+		manager.setBundleVersion(job.getProperty().getVersion());
 		manager.setProgressMonitor(null);
 		
-		List<ExportFileResource> resourcesToExport = generateExportResources(
-				job, manager);
-
-        createArchive(manager.getDestinationPath(), resourcesToExport);
-        
-        manager.deleteTempFiles();
-        
-        ProcessorUtilities.resetExportConfig();
-
+		try {
+			List<ExportFileResource> resourcesToExport = generateExportResources(
+					job, job.getProperty().getVersion(), manager);
+	
+			// Add resources built to archive
+	        createArchive(manager.getDestinationPath(), resourcesToExport);
+		} finally {
+	        // Cleanup
+	        manager.deleteTempFiles();
+	        
+	        ProcessorUtilities.resetExportConfig();
+		}
 	}
 
+	// Generate resources to be exported
 	private List<ExportFileResource> generateExportResources(
-			IRepositoryViewObject job, JobJavaScriptsManager manager)
-			throws ProcessorException {
+			ProcessItem job, String version, JobJavaScriptsManager manager)
+			throws ProcessorException, SystemException, CoreException {
 		
 		List<ExportFileResource> processes = new ArrayList<ExportFileResource>();
 		
-		ProcessItem processItem = (ProcessItem) job.getProperty().getItem();
-		ExportFileResource resource = new ExportFileResource(processItem, processItem.getProperty().getLabel());
+		ExportFileResource resource = new ExportFileResource(job, job.getProperty().getLabel());
 		
 		processes.add(resource);
 		
         List<ExportFileResource> resourcesToExport = manager.getExportResources(processes.toArray(new ExportFileResource[] {}));
         
-        // need to check for errors - but do this later - just trying to generate code at the moment
-//        IStructuredSelection selection = new StructuredSelection(nodes);
-//        // if job has compile error, will not export to avoid problem if run jobscript
-//        boolean hasErrors = CorePlugin.getDefault().getRunProcessService().checkExportProcess(selection, true);
-//        if (hasErrors) {
-//            manager.deleteTempFiles();
-//            return false;
-//        }
+        checkForErrors(job);
         
 		return resourcesToExport;
 	}
 
+	private void checkForErrors(ProcessItem job) throws SystemException, CoreException {
+        boolean error = false;
+
+        ITalendSynchronizer synchronizer = CorePlugin.getDefault().getCodeGeneratorService().createRoutineSynchronizer();
+        IFile sourceFile = synchronizer.getFile(job);
+        
+        // check whether the item had any compile errors when exporting the job
+        IMarker[] markers = sourceFile.findMarkers(IMarker.PROBLEM, true, IResource.DEPTH_ONE);
+        
+        for (IMarker marker : markers) {
+            Integer lineNr = (Integer) marker.getAttribute(IMarker.LINE_NUMBER);
+            String message = (String) marker.getAttribute(IMarker.MESSAGE);
+            Integer severity = (Integer) marker.getAttribute(IMarker.SEVERITY);
+            Integer start = (Integer) marker.getAttribute(IMarker.CHAR_START);
+            Integer end = (Integer) marker.getAttribute(IMarker.CHAR_END);
+            
+            if (lineNr != null && message != null && severity != null && start != null && end != null) {
+            	error = error || severity == IMarker.SEVERITY_ERROR;
+            }
+            
+            String logEntry = message + " line number: " + lineNr.toString() + " start: " + start.toString() + " end: " + end.toString();
+            
+            if (severity == IMarker.SEVERITY_ERROR) {
+            	log.error(logEntry);
+            } else if (severity == IMarker.SEVERITY_WARNING) {
+            	log.warn(logEntry);
+            } else {
+            	log.info(logEntry);
+            }
+        }
+        
+        if (error) {
+        	throw new RuntimeException("Error building job.  Aborting...");
+        }
+	}
+	
+	// Add provided resources to archive
 	private void createArchive(String destinationZipFile,
 			List<ExportFileResource> resourcesToExport)
 			throws InvocationTargetException, InterruptedException {
@@ -178,45 +229,24 @@ public class Generator implements IApplication {
         op.setUseCompression(true);
 
         op.run(new NullProgressMonitor());
-
-//  Not sure what this does - leave it for the moment
-//		        boolean generated = generatedCodes(version, monitor, processes);
-//		        if (!generated) {
-//		            return false;
-//		        }
-//
-//		        boolean addClasspathJar = true;
-//
-//		        IDesignerCoreService designerCoreService = CoreRuntimePlugin.getInstance().getDesignerCoreService();
-//
-//		        if (designerCoreService != null) {
-//		            addClasspathJar = designerCoreService.getDesignerCorePreferenceStore().getBoolean(
-//		                    IRepositoryPrefConstants.ADD_CLASSPATH_JAR);
-//		        }
-//
-//		        if (addClasspathJar) {
-//		            reBuildJobZipFile(processes);
-//		        } else {
         
-            String zipFile = tempDestinationPath;
-            FileCopyUtils.copy(zipFile, destinationZipFile);
-//		        }
+        String zipFile = tempDestinationPath;
+        FileCopyUtils.copy(zipFile, destinationZipFile);
 	}
 
-	private IRepositoryViewObject getJob(String jobName, String version)
+	// Find specified version of job
+	private ProcessItem getJob(String jobName, String version)
 			throws PersistenceException {
-		IRepositoryViewObject job = null;
-        
 		List<IRepositoryViewObject> processObjects = repository.getAll(
 				project, ERepositoryObjectType.PROCESS, false, false);
 		
 		for (IRepositoryViewObject processObject : processObjects) {
-			if (processObject.getLabel().equals(jobName) && processObject.getVersion().equals(version)) {
-				job = processObject;
-				break;
+			if (processObject.getLabel().equals(jobName)) {
+				return ItemCacheManager.getProcessItem(processObject.getId(), version);
 			}
 		}
-		return job;
+		
+		return null;
 	}
 
 	// Initialise and connect to the local repository (workspace)
@@ -263,4 +293,57 @@ public class Generator implements IApplication {
         user.setLogin("user@talend.com"); //$NON-NLS-1$
         return user;
     }
+   
+	private void loadUserComponents(String componentDir) throws Exception {
+        CodeGeneratorActivator.getDefault().getPreferenceStore()
+        .setValue(IComponentPreferenceConstant.USER_COMPONENTS_FOLDER, componentDir);
+
+		IComponentsFactory components = ComponentsFactoryProvider.getInstance();
+
+        components.loadUserComponentsFromComponentsProviderExtension();
+        CorePlugin.getDefault().getLibrariesService().syncLibraries(new NullProgressMonitor());
+        CorePlugin.getDefault().getLibrariesService().resetModulesNeeded();
+
+        ComponentGeneratorManager componentGeneratorManager = new ComponentGeneratorManager();
+        IStatus status = componentGeneratorManager.refreshTemplates();
+        
+        if (status.getCode() != IStatus.OK) {
+            throw new Exception(status.getException());
+        }
+	}
+
+   /***/
+   static class ComponentGeneratorManager {
+
+       private IStatus status;
+
+       public IStatus refreshTemplates() throws InterruptedException {
+           final Job refreshTemplatesJob = getCodeGenerationService().refreshTemplates();
+           Job.getJobManager().addJobChangeListener(new JobChangeAdapter() {
+
+               @Override
+               public void done(IJobChangeEvent event) {
+                   if (event.getJob().equals(refreshTemplatesJob)) {
+                       setStatus(event.getResult());
+                   }
+               }
+           });
+
+           while (status == null) {
+               Thread.sleep(1000);
+           }
+
+           return status;
+       }
+
+       private void setStatus(IStatus result) {
+           this.status = result;
+       }
+
+       private ICodeGeneratorService getCodeGenerationService() {
+           IService service = GlobalServiceRegister.getDefault().getService(ICodeGeneratorService.class);
+           return (ICodeGeneratorService) service;
+       }
+   }
+   
 }
