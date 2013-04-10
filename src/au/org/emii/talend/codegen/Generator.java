@@ -73,7 +73,12 @@ public class Generator implements IApplication {
 		
 	    // Get export options 
 		Map<ExportChoice, Object> exportChoiceMap = getExportOptions();
+
+		// Set custom component directory
 		
+        CodeGeneratorActivator.getDefault().getPreferenceStore()
+        .setValue(IComponentPreferenceConstant.USER_COMPONENTS_FOLDER, componentDir);
+
 		log.info("Building " + jobName + "...");
 		
 		// Let talend services know we are running in headless mode
@@ -95,13 +100,6 @@ public class Generator implements IApplication {
         log.info("Initialising code generation engine...");
 
         initCodeGenerationEngine();
-        
-        //Load user components if applicable
-        if (!componentDir.trim().equals("")) {
-            log.info("Loading user components...");
-
-            loadUserComponents(componentDir);
-        }
         
         // Export the job
 		exportJob(jobName, targetDir, version, exportChoiceMap);
@@ -293,57 +291,5 @@ public class Generator implements IApplication {
         user.setLogin("user@talend.com"); //$NON-NLS-1$
         return user;
     }
-   
-	private void loadUserComponents(String componentDir) throws Exception {
-        CodeGeneratorActivator.getDefault().getPreferenceStore()
-        .setValue(IComponentPreferenceConstant.USER_COMPONENTS_FOLDER, componentDir);
-
-		IComponentsFactory components = ComponentsFactoryProvider.getInstance();
-
-        components.loadUserComponentsFromComponentsProviderExtension();
-        CorePlugin.getDefault().getLibrariesService().syncLibraries(new NullProgressMonitor());
-        CorePlugin.getDefault().getLibrariesService().resetModulesNeeded();
-
-        ComponentGeneratorManager componentGeneratorManager = new ComponentGeneratorManager();
-        IStatus status = componentGeneratorManager.refreshTemplates();
-        
-        if (status.getCode() != IStatus.OK) {
-            throw new Exception(status.getException());
-        }
-	}
-
-   /***/
-   static class ComponentGeneratorManager {
-
-       private IStatus status;
-
-       public IStatus refreshTemplates() throws InterruptedException {
-           final Job refreshTemplatesJob = getCodeGenerationService().refreshTemplates();
-           Job.getJobManager().addJobChangeListener(new JobChangeAdapter() {
-
-               @Override
-               public void done(IJobChangeEvent event) {
-                   if (event.getJob().equals(refreshTemplatesJob)) {
-                       setStatus(event.getResult());
-                   }
-               }
-           });
-
-           while (status == null) {
-               Thread.sleep(1000);
-           }
-
-           return status;
-       }
-
-       private void setStatus(IStatus result) {
-           this.status = result;
-       }
-
-       private ICodeGeneratorService getCodeGenerationService() {
-           IService service = GlobalServiceRegister.getDefault().getService(ICodeGeneratorService.class);
-           return (ICodeGeneratorService) service;
-       }
-   }
    
 }
