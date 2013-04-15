@@ -12,22 +12,15 @@ import org.eclipse.core.resources.IFile;
 import org.eclipse.core.resources.IMarker;
 import org.eclipse.core.resources.IResource;
 import org.eclipse.core.runtime.CoreException;
-import org.eclipse.core.runtime.IStatus;
 import org.eclipse.core.runtime.NullProgressMonitor;
-import org.eclipse.core.runtime.jobs.IJobChangeEvent;
-import org.eclipse.core.runtime.jobs.Job;
-import org.eclipse.core.runtime.jobs.JobChangeAdapter;
 import org.eclipse.equinox.app.IApplication;
 import org.eclipse.equinox.app.IApplicationContext;
 import org.talend.commons.CommonsPlugin;
 import org.talend.commons.exception.PersistenceException;
 import org.talend.commons.exception.SystemException;
 import org.talend.core.CorePlugin;
-import org.talend.core.GlobalServiceRegister;
-import org.talend.core.IService;
 import org.talend.core.context.Context;
 import org.talend.core.context.RepositoryContext;
-import org.talend.core.model.components.IComponentsFactory;
 import org.talend.core.model.general.Project;
 import org.talend.core.model.genhtml.FileCopyUtils;
 import org.talend.core.model.properties.ProcessItem;
@@ -39,7 +32,6 @@ import org.talend.core.repository.model.ProxyRepositoryFactory;
 import org.talend.core.repository.model.RepositoryFactoryProvider;
 import org.talend.designer.codegen.CodeGenInit;
 import org.talend.designer.codegen.CodeGeneratorActivator;
-import org.talend.designer.codegen.ICodeGeneratorService;
 import org.talend.designer.codegen.ITalendSynchronizer;
 import org.talend.designer.codegen.components.ui.IComponentPreferenceConstant;
 import org.talend.designer.core.model.utils.emf.talendfile.ContextParameterType;
@@ -49,7 +41,6 @@ import org.talend.designer.runprocess.ProcessorException;
 import org.talend.designer.runprocess.ProcessorUtilities;
 import org.talend.repository.documentation.ArchiveFileExportOperationFullPath;
 import org.talend.repository.documentation.ExportFileResource;
-import org.talend.repository.model.ComponentsFactoryProvider;
 import org.talend.repository.ui.wizards.exportjob.JavaJobExportReArchieveCreator;
 import org.talend.repository.ui.wizards.exportjob.scriptsmanager.JobJavaScriptsManager;
 import org.talend.repository.ui.wizards.exportjob.scriptsmanager.JobScriptsManager.ExportChoice;
@@ -79,8 +70,6 @@ public class Generator implements IApplication {
         CodeGeneratorActivator.getDefault().getPreferenceStore()
         .setValue(IComponentPreferenceConstant.USER_COMPONENTS_FOLDER, componentDir);
 
-		log.info("Building " + jobName + "...");
-		
 		// Let talend services know we are running in headless mode
 		// so they don't use ui stuff like messageboxes for exceptions
         CommonsPlugin.setHeadless(true);
@@ -244,7 +233,7 @@ public class Generator implements IApplication {
 			}
 		}
 		
-		return null;
+		throw new RuntimeException("Job " + jobName + " not found");
 	}
 
 	// Initialise and connect to the local repository (workspace)
