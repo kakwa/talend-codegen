@@ -21,7 +21,6 @@ Invoke talend with the following mandatory command line arguments:
  * -targetDir - the directory where the exported job will be placed
  
 Some optional command line arguments you can have:
- * -noSplash
  * -version - version of job to be exported
  * -componentDir - location of any custom components used in the job
  * -needLauncher - include launcher script (true/false)
