@@ -56,3 +56,4 @@ main() {
 	return $retval
 }
 
+main "$@"
