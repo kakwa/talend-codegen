@@ -10,6 +10,7 @@
 #
 # for jenkins for instance, you can have:
 # TALEND_DIR=/var/lib/jenkins/talend
+# TALEND_CODEGEN=$TALEND_DIR/talend-codegen
 # TALEND_CUSTOM_COMPONENTS=$TALEND_DIR/talend-components
 # TALEND_EXEC=$TALEND_DIR/TOS_DI-linux-gtk-x86_64
 # TALEND_BUILD=$WORKSPACE/target
