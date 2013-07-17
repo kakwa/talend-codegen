@@ -22,6 +22,7 @@
 # $1 - job name
 export_job() {
 	local job_name=$1; shift
+	mkdir -p $TALEND_BUILD
 	$TALEND_EXEC \
 		--clean_component_cache --disableShellInput -nosplash \
 		-consoleLog --launcher.suppressErrors \
