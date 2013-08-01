@@ -1,5 +1,7 @@
 package au.org.emii.talend.codegen;
 
+import java.io.File;
+import java.io.IOException;
 import java.lang.reflect.InvocationTargetException;
 import java.util.ArrayList;
 import java.util.EnumMap;
@@ -138,15 +140,37 @@ public class Generator implements IApplication {
 		try {
 			List<ExportFileResource> resourcesToExport = generateExportResources(
 					job, job.getProperty().getVersion(), manager);
-	
+			
+			File tempZipFile = createTempFile(); 
+			 				 			  
+			manager.setTopFolder(resourcesToExport);
+			 
 			// Add resources built to archive
-	        createArchive(manager.getDestinationPath(), resourcesToExport);
-		} finally {
+	        createArchive( tempZipFile.getAbsolutePath(), resourcesToExport );
+	        
+	        // Rebuild zip file to use classpath jar instead of including all jars in launch script
+	        ClasspathFixup fixup = new ClasspathFixup(manager);
+	         	          	       
+	        fixup.reBuildJobZipFile( resourcesToExport, tempZipFile.getAbsolutePath());
+	        
+		} 
+		finally {
 	        // Cleanup
 	        manager.deleteTempFiles();
 	        
 	        ProcessorUtilities.resetExportConfig();
 		}
+	}
+
+	private File createTempFile() {
+		 
+		 try {
+			 return File.createTempFile( "talend", ".zip" );
+		} catch (IOException e) {
+		
+			// We can't deal with it...
+			throw ( new RuntimeException(e));				 
+		}	 
 	}
 
 	// Generate resources to be exported
@@ -221,7 +245,7 @@ public class Generator implements IApplication {
         FileCopyUtils.copy(zipFile, destinationZipFile);
 	}
 
-	// Find specified version of job
+    // Find specified version of job
 	private ProcessItem getJob(String jobName, String version)
 			throws PersistenceException {
 		List<IRepositoryViewObject> processObjects = repository.getAll(
@@ -263,11 +287,11 @@ public class Generator implements IApplication {
         exportChoiceMap.put(ExportChoice.needSystemRoutine, Params.getBooleanOption("-needSystemRoutine", Boolean.TRUE));
         exportChoiceMap.put(ExportChoice.needUserRoutine, Params.getBooleanOption("-needUserRoutine", Boolean.TRUE));
         exportChoiceMap.put(ExportChoice.needTalendLibraries, Params.getBooleanOption("-needTalendLibraries", Boolean.TRUE));
-        exportChoiceMap.put(ExportChoice.needJobItem, Params.getBooleanOption("-needJobItem", Boolean.TRUE));
-        exportChoiceMap.put(ExportChoice.needSourceCode, Params.getBooleanOption("-needSourceCode", Boolean.TRUE));
-        exportChoiceMap.put(ExportChoice.needDependencies, Params.getBooleanOption("-needDependencies", Boolean.TRUE));
+        exportChoiceMap.put(ExportChoice.needJobItem, Params.getBooleanOption("-needJobItem", Boolean.FALSE));
+        exportChoiceMap.put(ExportChoice.needSourceCode, Params.getBooleanOption("-needSourceCode", Boolean.FALSE));
+        exportChoiceMap.put(ExportChoice.needDependencies, Params.getBooleanOption("-needDependencies", Boolean.FALSE));
         exportChoiceMap.put(ExportChoice.needJobScript, Params.getBooleanOption("-needJobScript", Boolean.TRUE));
-        exportChoiceMap.put(ExportChoice.needContext, Params.getBooleanOption("-needContext", Boolean.TRUE));
+        exportChoiceMap.put(ExportChoice.needContext, Params.getBooleanOption("-needContext", Boolean.FALSE));
         exportChoiceMap.put(ExportChoice.applyToChildren, Params.getBooleanOption("-applyToChildren", Boolean.FALSE));
         exportChoiceMap.put(ExportChoice.setParameterValues, Params.getBooleanOption("-setParameterValues", Boolean.FALSE));
         
