@@ -24,7 +24,7 @@ Eclipse application arguments
  * -application au.org.emii.talend.codegen.Generator - run the code generation plugin 
  * -nosplash stops the display of the gui splash window
  * --launcher.suppressErrors stops errors being displayed in message boxes - output to stderr instead
- * -data specifies the talend workspace used for building the workspace - created automatically if it doesn't exist which it won't in this case because we delete it to ensure a clean build
+ * -data specifies the talend workspace used for building the project - created automatically if it doesn't exist (recommended to ensure a clean build)
  * --clean_component_cache tells TOS to reload external components and rebuild the cache
  
 Some optional command line arguments you can have:
