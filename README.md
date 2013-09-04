@@ -19,6 +19,13 @@ Invoke talend with the following mandatory command line arguments:
  * -projectDir - the project directory where the project can be found
  * -jobName - name of the job to be exported
  * -targetDir - the directory where the exported job will be placed
+
+Eclipse application arguments
+ * -application au.org.emii.talend.codegen.Generator - run the code generation plugin 
+ * -nosplash stops the display of the gui splash window
+ * --launcher.suppressErrors stops errors being displayed in message boxes - output to stderr instead
+ * -data specifies the talend workspace used for building the workspace - created automatically if it doesn't exist which it won't in this case because we delete it to ensure a clean build
+ * --clean_component_cache tells TOS to reload external components and rebuild the cache
  
 Some optional command line arguments you can have:
  * -version - version of job to be exported
@@ -34,3 +41,11 @@ Some optional command line arguments you can have:
  * -needContext
  * -applyToChildren
 
+Example
+-------
+
+This example is taken from our Jenkins build process - $WORKSPACE is the location of the talend project
+
+TOS_DI-linux-gtk-x86 -nosplash --launcher.suppressErrors -data $WORKSPACE/../.talend-workspace --clean_component_cache -application au.org.emii.talend.codegen.Generator -jobName ThreddsExample -projectDir $WORKSPACE -targetDir $WORKSPACE/.talend-build -componentDir /par2/git-repos/talend_components 
+ 
+ 
