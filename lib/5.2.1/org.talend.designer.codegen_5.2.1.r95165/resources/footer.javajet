@@ -1,0 +1,651 @@
+<%@ jet 
+    package="org.talend.designer.codegen.translators" 
+    imports="
+        org.talend.core.model.process.IProcess
+        org.talend.core.model.process.INode 
+        org.talend.designer.codegen.config.CodeGeneratorArgument
+        org.talend.core.CorePlugin
+        org.talend.core.model.process.EConnectionType
+        org.talend.core.model.process.IConnection   
+        org.talend.core.model.metadata.IMetadataTable
+        org.talend.core.model.metadata.IMetadataColumn
+        java.util.Vector
+        java.util.List
+        java.util.ArrayList
+        org.talend.core.model.process.IContextParameter
+        org.talend.core.model.metadata.types.JavaTypesManager
+        org.talend.core.model.metadata.types.JavaType
+        org.talend.core.model.utils.JavaResourcesHelper
+        org.talend.core.model.process.ElementParameterParser
+    " 
+    class="Footer" 
+    skeleton="footer_java.skeleton" 
+%>
+<%
+    CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+    Vector v = (Vector) codeGenArgument.getArgument();
+    IProcess process = (IProcess)v.get(0);
+    List<INode> rootNodes = (List<INode>)v.get(1);
+
+    boolean stats = codeGenArgument.isStatistics();
+    boolean trace = codeGenArgument.isTrace();
+    boolean isRunInMultiThread = codeGenArgument.getIsRunInMultiThread();
+    List<IContextParameter> params = new ArrayList<IContextParameter>();
+    params=process.getContextManager().getDefaultContext().getContextParameterList();
+    String jobFolderName = JavaResourcesHelper.getJobFolderName(process.getName(), process.getVersion());
+    
+    boolean exist_tParallelize = false;
+    List<? extends INode> tParallelizeList = process.getNodesOfType("tParallelize");
+    if(tParallelizeList != null && tParallelizeList.size() > 0){
+        exist_tParallelize = true;
+    }
+
+    boolean exist_tMOM = false;
+    List<INode> momComponentsList = (List<INode>)process.getNodesOfType("tMomConnection");
+    momComponentsList.addAll((List<INode>)process.getNodesOfType("tMomInput"));
+    momComponentsList.addAll((List<INode>)process.getNodesOfType("tMomOutput"));
+    if (momComponentsList.size() > 0) {
+        exist_tMOM = true;
+    }
+%>
+    public String resuming_logs_dir_path = null;
+    public String resuming_checkpoint_path = null;
+    public String parent_part_launcher = null;
+    private String resumeEntryMethodName = null;
+    private boolean globalResumeTicket = false;
+
+    public boolean watch = false;
+    // portStats is null, it means don't execute the statistics
+    public Integer portStats = null;
+    public int portTraces = 4334;
+    public String clientHost;
+    public String defaultClientHost = "localhost";
+    public String contextStr = "<%=codeGenArgument.getContextName() %>";
+    public boolean isDefaultContext = true;
+    public String pid = "0";
+    public String rootPid = null;
+    public String fatherPid = null;
+    public String fatherNode = null;
+    public long startTime = 0;
+    public boolean isChildJob = false;
+
+    private boolean execStat = true;
+
+    private ThreadLocal<java.util.Map<String, String>> threadLocal = new ThreadLocal<java.util.Map<String, String>>() {
+        protected java.util.Map<String, String> initialValue() {
+            java.util.Map<String,String> threadRunResultMap = new java.util.HashMap<String, String>();
+            threadRunResultMap.put("errorCode", null);
+            threadRunResultMap.put("status", "");
+            return threadRunResultMap;
+        };
+    };
+<%
+    if(isRunInMultiThread || exist_tParallelize){
+%>
+    private SyncInt runningThreadCount =new SyncInt();
+
+    private class SyncInt
+    {
+        private int count = 0;
+        public synchronized void add(int i)
+        {
+            count +=i;
+        }
+        
+        public synchronized int getCount()
+        {
+            return count;
+        }
+    }
+<%
+    }
+%>
+
+    private java.util.Properties context_param = new java.util.Properties();
+    public java.util.Map<String, Object> parentContextMap = new java.util.HashMap<String, Object>();
+
+    public String status= "";
+
+    public static void main(String[] args){
+        final <%=process.getName() %> <%=process.getName() %>Class = new <%=process.getName() %>();
+
+        int exitCode = <%=process.getName() %>Class.runJobInTOS(args);
+        System.exit(exitCode);
+    }
+   
+ 
+    public String[][] runJob(String[] args) {
+    
+        int exitCode = runJobInTOS(args);
+    <%  
+        List<INode> tBufferNodes = (List<INode>)process.getNodesOfType("tBufferOutput");
+        if(tBufferNodes != null && tBufferNodes.size() > 0) {
+    %>                  
+        String[][] bufferValue = (String[][])globalBuffer.toArray(new String[globalBuffer.size()][]);
+    <%
+        } else {
+    %>
+        String[][] bufferValue = new String[][] { { Integer.toString(exitCode) } };
+    <%
+        }
+    %>
+
+        return bufferValue;
+    }
+
+
+    public int runJobInTOS(String[] args) {
+        
+        String lastStr = "";
+        for (String arg : args) {
+            if (arg.equalsIgnoreCase("--context_param")) {
+                lastStr = arg;
+            } else if (lastStr.equals("")) {
+                evalParam(arg);
+            } else {
+                evalParam(lastStr + " " + arg);
+                lastStr = "";
+            }
+        }
+
+        if(clientHost == null) {
+            clientHost = defaultClientHost;
+        }
+
+        if(pid == null || "0".equals(pid)) {
+            pid = TalendString.getAsciiRandomString(6);
+        }
+
+        if (rootPid==null) {
+            rootPid = pid;
+        }
+        if (fatherPid==null) {
+            fatherPid = pid;
+        }else{
+            isChildJob = true;
+        }
+
+<%
+        if (stats) {
+%>
+        if (portStats != null) {
+            // portStats = -1; //for testing
+            if (portStats < 0 || portStats > 65535) {
+                // issue:10869, the portStats is invalid, so this client socket can't open
+                System.err.println("The statistics socket port " + portStats + " is invalid.");
+                execStat = false;
+            }
+        } else {
+            execStat = false;
+        }
+<%
+        }
+%>
+
+        try {
+            //call job/subjob with an existing context, like: --context=production. if without this parameter, there will use the default context instead.  
+            java.io.InputStream inContext = <%=process.getName()%>.class.getClassLoader().getResourceAsStream("<%=codeGenArgument.getCurrentProjectName().toLowerCase() %>/<%=jobFolderName %>/contexts/"+contextStr+".properties");
+            if(isDefaultContext && inContext ==null) {
+
+            } else {
+                if (inContext!=null) {
+                    //defaultProps is in order to keep the original context value
+                    defaultProps.load(inContext);
+                    inContext.close();
+                    context = new ContextProperties(defaultProps);
+                }else{
+                    //print info and job continue to run, for case: context_param is not empty.
+                    System.err.println("Could not find the context " + contextStr);
+                }
+            }
+            
+            if(!context_param.isEmpty()) {
+                context.putAll(context_param);
+            }
+            <% for (IContextParameter ctxParam :params)
+            {
+                String typeToGenerate ="String";
+                if( !(ctxParam.getType().equals("id_File") || ctxParam.getType().equals("id_Directory") ||ctxParam.getType().equals("id_List Of Value")))
+                {
+                   typeToGenerate=JavaTypesManager.getTypeToGenerate(ctxParam.getType(),true);
+                }
+                if(typeToGenerate.equals("java.util.Date"))
+                {
+
+            %>
+            try{
+                String context_<%=ctxParam.getName()%>_value = context.getProperty("<%=ctxParam.getName()%>");
+                if (context_<%=ctxParam.getName()%>_value == null){
+                    context_<%=ctxParam.getName()%>_value = "";
+                }
+                int context_<%=ctxParam.getName()%>_pos = context_<%=ctxParam.getName()%>_value.indexOf(";");
+                String context_<%=ctxParam.getName()%>_pattern =  "yyyy-MM-dd HH:mm:ss";
+                if(context_<%=ctxParam.getName()%>_pos > -1){
+                    context_<%=ctxParam.getName()%>_pattern = context_<%=ctxParam.getName()%>_value.substring(0, context_<%=ctxParam.getName()%>_pos);
+                    context_<%=ctxParam.getName()%>_value = context_<%=ctxParam.getName()%>_value.substring(context_<%=ctxParam.getName()%>_pos + 1);
+                }
+
+                context.<%=ctxParam.getName()%>=(java.util.Date)(new java.text.SimpleDateFormat(context_<%=ctxParam.getName()%>_pattern).parse(context_<%=ctxParam.getName()%>_value));
+
+            }catch(ParseException e)
+            {
+                context.<%=ctxParam.getName()%>=null;
+            }
+              <%
+                }else if(typeToGenerate.equals("Object")||typeToGenerate.equals("String")||typeToGenerate.equals("java.lang.String") )
+                {
+                %>
+                context.<%=ctxParam.getName()%>=(<%=typeToGenerate%>) context.getProperty("<%=ctxParam.getName()%>");
+                <%
+                }else if(typeToGenerate.equals("Character")&&ctxParam.getName()!=null)
+                {
+             %>
+             context.<%=ctxParam.getName()%>= new java.text.StringCharacterIterator(context.getProperty("<%=ctxParam.getName()%>")).first();
+         <%
+                } else {
+             %> 
+             try{
+                 context.<%=ctxParam.getName()%>=routines.system.ParserUtils.parseTo_<%=typeToGenerate%> (context.getProperty("<%=ctxParam.getName()%>"));
+             }catch(NumberFormatException e){
+                 context.<%=ctxParam.getName()%>=null;
+              }
+             <%
+                }
+            }
+            %>
+        } catch (java.io.IOException ie) {
+            System.err.println("Could not load context "+contextStr);
+            ie.printStackTrace();
+        }
+
+
+        // get context value from parent directly
+        if (parentContextMap != null && !parentContextMap.isEmpty()) {
+        <% for (IContextParameter ctxParam :params){
+            //about the type, they are same as header.javajet
+            String typeToGenerate = "String";
+            if(ctxParam.getType().equals("id_List Of Value") || ctxParam.getType().equals("id_File") || ctxParam.getType().equals("id_Directory")){
+                typeToGenerate = "String";
+            }else{
+                typeToGenerate = JavaTypesManager.getTypeToGenerate(ctxParam.getType(),true);
+            }
+        %>if (parentContextMap.containsKey("<%=ctxParam.getName()%>")) {
+                context.<%=ctxParam.getName()%> = (<%=typeToGenerate %>) parentContextMap.get("<%=ctxParam.getName()%>");
+            }<%}%>
+        }
+
+        //Resume: init the resumeUtil
+        resumeEntryMethodName = ResumeUtil.getResumeEntryMethodName(resuming_checkpoint_path);
+        resumeUtil = new ResumeUtil(resuming_logs_dir_path, isChildJob, rootPid);
+        resumeUtil.initCommonInfo(pid, rootPid, fatherPid, projectName, jobName, contextStr, jobVersion);
+
+        //Resume: jobStart
+        resumeUtil.addLog("JOB_STARTED", "JOB:" + jobName, parent_part_launcher, Thread.currentThread().getId() + "", "","","","",resumeUtil.convertToJsonText(context));       
+
+<%
+        if (stats) {
+%>
+if(execStat) {
+    try {
+        runStat.openSocket(!isChildJob);
+        runStat.setAllPID(rootPid, fatherPid, pid, jobName);
+        runStat.startThreadStat(clientHost, portStats);
+        runStat.updateStatOnJob(RunStat.JOBSTART, fatherNode);
+    } catch (java.io.IOException ioException) {
+        ioException.printStackTrace();
+    }
+}   
+<%
+    }
+%>
+
+<%
+    if (trace) {
+%>
+    try {
+        runTrace.openSocket(!isChildJob);
+        runTrace.startThreadTrace(clientHost, portTraces);
+    } catch (java.io.IOException ioException) {
+        ioException.printStackTrace();
+    }
+<%
+    }
+%>
+
+<%= ElementParameterParser.getValue(process, "__HEADER_CODE__")%>
+
+    java.util.concurrent.ConcurrentHashMap<Object, Object> concurrentHashMap = new java.util.concurrent.ConcurrentHashMap<Object, Object>();
+    globalMap.put("concurrentHashMap", concurrentHashMap);
+
+    long startUsedMemory = Runtime.getRuntime().totalMemory() - Runtime.getRuntime().freeMemory();
+    long endUsedMemory = 0;
+    long end = 0;
+    
+    startTime = System.currentTimeMillis();
+<%
+        //1. send the begin msg
+
+        for (INode statCatcherNode : process.getNodesOfType("tStatCatcher")) {
+%>
+        <%=statCatcherNode.getUniqueName() %>.addMessage("begin");
+<%
+        }
+
+        List<INode> prejobNodes = new ArrayList<INode>();
+
+        List<INode> postjobNodes = new ArrayList<INode>();
+
+        INode implicit_Context = null;
+
+        for (INode rootNode : rootNodes) {
+            String componentName = rootNode.getComponent().getName();
+            String uniqueName = rootNode.getUniqueName();
+            
+            if (componentName.equals("tPrejob")) {
+                prejobNodes.add(rootNode);
+                continue;
+            }
+
+            if (componentName.equals("tPostjob")) {
+                postjobNodes.add(rootNode);
+                continue;
+            }
+
+            if (uniqueName.startsWith("Implicit_Context_")) {
+                implicit_Context = rootNode;
+                continue;
+            }
+        }
+%>
+
+<%
+//2. load implicit contextload
+ if(implicit_Context != null) {
+%>
+<%=createCallProcess(implicit_Context, process.getName(), false) %>
+<%
+ }
+%>
+
+this.globalResumeTicket = true;//to run tPreJob
+
+<%
+//3. run pre-job
+ if(!prejobNodes.isEmpty()) {
+    for(INode preNode:prejobNodes) {
+%>
+<%=createCallProcess(preNode, process.getName(), false) %>
+<% 
+    }
+ }
+%>
+
+
+<%
+        //4. flush the begin msg
+        for (INode statCatcherNode : process.getNodesOfType("tStatCatcher")) {
+%>
+        try {
+            <%=statCatcherNode.getDesignSubjobStartNode().getUniqueName() %>Process(globalMap);
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+<%
+        }
+%>
+
+this.globalResumeTicket = false;//to run others jobs
+
+<%
+
+    //5. all others sub-job (MultiThread mode)
+    if(isRunInMultiThread){
+        for (INode rootNode : rootNodes) {
+            String componentName = rootNode.getComponent().getName();
+            String uniqueName = rootNode.getUniqueName();
+
+            //filter the special subjob
+            if("tPrejob".equals(componentName)) continue;
+            if("tPostjob".equals(componentName)) continue;
+
+            //bug16808 when use parallel option at Output components, that will multi thread
+            if(componentName.startsWith("tAsyncIn")) continue;
+            //end bug16808
+
+            if(implicit_Context!=null && implicit_Context.getUniqueName().equals(uniqueName)) continue;
+
+            if (!componentName.equals("tLogCatcher") && !componentName.equals("tFlowMeterCatcher") && !componentName.equals("tAssertCatcher") && !componentName.equals("tStatCatcher")) {
+%>
+        runningThreadCount.add(1);
+        new Thread(){
+            public void run() {
+                java.util.Map threadRunResultMap = new java.util.HashMap();
+                threadRunResultMap.put("errorCode", null);
+                threadRunResultMap.put("status", "");
+                threadLocal.set(threadRunResultMap);
+                
+                <%=createCallProcess(rootNode, process.getName(), true) %>
+                finally {
+                    Integer localErrorCode = (Integer)(((java.util.Map)threadLocal.get()).get("errorCode"));
+                    String localStatus = (String)(((java.util.Map)threadLocal.get()).get("status"));
+                    if (localErrorCode != null) {
+                        if (errorCode == null || localErrorCode.compareTo(errorCode) > 0) {
+                           errorCode = localErrorCode;
+                        }
+                    }
+                    if (!status.equals("failure")){
+                        status = localStatus;
+                    }
+
+                    runningThreadCount.add(-1);
+                }
+            }
+        }.start();
+
+<%
+            }
+        }
+%>
+    while (runningThreadCount.getCount() > 0) {
+        try {
+            Thread.sleep(10);
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+    }
+<%
+    } else { // isRunInMultiThread  //5. all others sub-job (SingleThread  mode)
+        for (INode rootNode : rootNodes) {
+            String componentName = rootNode.getComponent().getName();
+            String uniqueName = rootNode.getUniqueName();
+            
+            //filter the special subjob
+            if("tPrejob".equals(componentName)) continue;
+            if("tPostjob".equals(componentName)) continue;
+            if(implicit_Context!=null && implicit_Context.getUniqueName().equals(uniqueName)) continue;
+
+            if (!componentName.equals("tLogCatcher") && !componentName.equals("tFlowMeterCatcher") && !componentName.equals("tAssertCatcher") && !componentName.equals("tStatCatcher") && !componentName.equals("tAsyncIn")) {
+%>
+<%=createCallProcess(rootNode, process.getName(), false) %>
+<%    }
+    }
+}// end if(isRunInMultiThread)
+%>
+
+<%
+    if(exist_tMOM) {
+%>
+    closeJmsConnections();
+<%
+    }
+%>
+
+this.globalResumeTicket = true;//to run tPostJob
+
+<%
+//6. run the post-job
+ if(!postjobNodes.isEmpty()){
+    for(INode postNode:postjobNodes){
+%>
+<%=createCallProcess(postNode, process.getName(), false) %>
+<% 
+    }
+ }
+%>
+
+<%= ElementParameterParser.getValue(process, "__FOOTER_CODE__")%>
+
+        end = System.currentTimeMillis();
+
+        if (watch) {
+            System.out.println((end-startTime)+" milliseconds");
+        }
+
+        endUsedMemory = Runtime.getRuntime().totalMemory() - Runtime.getRuntime().freeMemory();
+        if (false) {
+            System.out.println((endUsedMemory - startUsedMemory) + " bytes memory increase when running : <%=process.getName() %>");
+        }
+<%
+    //7. send & flush the end msg to statcatcher
+    for (INode statCatcherNode : process.getNodesOfType("tStatCatcher")) {
+%>
+        <%=statCatcherNode.getUniqueName() %>.addMessage(status==""?"end":status, (end-startTime));
+        try {
+            <%=statCatcherNode.getDesignSubjobStartNode().getUniqueName() %>Process(globalMap);
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+<%
+    }
+%>
+
+<%
+    if (stats) {
+%>
+if (execStat) {
+    runStat.updateStatOnJob(RunStat.JOBEND, fatherNode);
+    runStat.stopThreadStat();
+}
+<%
+    }
+
+    if (trace) {
+%>
+        runTrace.stopThreadTrace();
+<%
+    }
+%>
+    int returnCode = 0; 
+    if(errorCode == null) {
+         returnCode = status != null && status.equals("failure") ? 1 : 0;
+    } else {
+         returnCode = errorCode.intValue();
+    }
+    resumeUtil.addLog("JOB_ENDED", "JOB:" + jobName, parent_part_launcher, Thread.currentThread().getId() + "", "","" + returnCode,"","","");
+  
+    return returnCode;
+
+  }
+
+    public void destroy() {
+<%
+    if(exist_tMOM) {
+%>
+    closeJmsConnections();
+<%
+    }
+%>
+    }
+
+<%
+    if(exist_tMOM) {
+%>
+    private void closeJmsConnections() {
+        try {
+            Object obj_conn;
+<%
+            for (INode momNode : momComponentsList) {
+%>
+            obj_conn = globalMap.get("connection_<%=momNode.getUniqueName() %>");
+            if (null != obj_conn) {
+                ((javax.jms.Connection) obj_conn).close();
+            }
+<%
+            }
+%>
+        } catch (Exception e) {
+        }
+    }
+<%
+    }
+%>
+
+    private void evalParam(String arg) {
+        if (arg.startsWith("--resuming_logs_dir_path")) {
+            resuming_logs_dir_path = arg.substring(25);
+        } else if (arg.startsWith("--resuming_checkpoint_path")) {
+            resuming_checkpoint_path = arg.substring(27);
+        } else if (arg.startsWith("--parent_part_launcher")) {
+            parent_part_launcher = arg.substring(23);
+        } else if (arg.startsWith("--watch")) {
+            watch = true;
+        } else if (arg.startsWith("--stat_port=")) {
+            String portStatsStr = arg.substring(12);
+            if (portStatsStr != null && !portStatsStr.equals("null")) {
+                portStats = Integer.parseInt(portStatsStr);
+            }
+        } else if (arg.startsWith("--trace_port=")) {
+            portTraces = Integer.parseInt(arg.substring(13));
+        } else if (arg.startsWith("--client_host=")) {
+            clientHost = arg.substring(14);
+        } else if (arg.startsWith("--context=")) {
+            contextStr = arg.substring(10);
+            isDefaultContext = false;
+        } else if (arg.startsWith("--father_pid=")) {
+            fatherPid = arg.substring(13);
+        } else if (arg.startsWith("--root_pid=")) {
+            rootPid = arg.substring(11);
+        } else if (arg.startsWith("--father_node=")) {
+            fatherNode = arg.substring(14);
+        } else if (arg.startsWith("--pid=")) {
+            pid = arg.substring(6);
+        } else if (arg.startsWith("--context_param")) {
+            String keyValue = arg.substring(16);
+            int index = -1;
+            if (keyValue != null && (index = keyValue.indexOf('=')) > -1) {
+                if (fatherPid==null) {
+                    context_param.put(keyValue.substring(0, index), replaceEscapeChars(keyValue.substring(index + 1)));
+                } else { // the subjob won't escape the especial chars
+                    context_param.put(keyValue.substring(0, index), keyValue.substring(index + 1) );
+                }
+            }
+        }
+
+    }
+
+    private final String[][] escapeChars = {
+        {"\\n","\n"},{"\\'","\'"},{"\\r","\r"},
+        {"\\f","\f"},{"\\b","\b"},{"\\t","\t"},
+        {"\\\\","\\"}
+        };
+    private String replaceEscapeChars (String keyValue) {
+        if(keyValue==null || ("").equals(keyValue.trim())) {
+            return keyValue;
+        }
+        for(String[] strArray: escapeChars) {
+            keyValue = keyValue.replace(strArray[0], strArray[1]);
+        }
+        return keyValue;
+    }
+
+    public Integer getErrorCode() {
+        return errorCode;
+    }
+
+
+    public String getStatus() {
+        return status;
+    }
+    
+    ResumeUtil resumeUtil = null;
+}

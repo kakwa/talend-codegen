@@ -1,0 +1,46 @@
+<%@ jet
+	package="org.talend.designer.codegen.translators.common"
+	imports="
+		java.util.Vector
+
+		org.talend.designer.codegen.config.CodeGeneratorArgument
+
+		org.talend.core.model.process.INode
+		org.talend.core.model.process.IProcess
+	"
+	class="Header_additional"
+%>
+<%
+CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+Vector v = (Vector) codeGenArgument.getArgument();
+IProcess process = (IProcess) v.get(0);
+
+boolean actAsProvider = !process.getNodesOfType("tESBProviderRequestLoop").isEmpty();
+boolean actAsConsumer = !process.getNodesOfType("tESBConsumer").isEmpty();
+
+if (actAsConsumer) { %>
+	private ESBEndpointRegistry registry = null;
+
+	public void setEndpointRegistry(ESBEndpointRegistry registry) {
+		this.registry = registry;
+	}
+
+	private Object wrapPayload(Object payload, Object customProperties) {
+		java.util.Map<String, Object> outputWrapped = new java.util.HashMap<String, Object>();
+		outputWrapped.put("PAYLOAD", payload);
+		if (null != customProperties) {
+			outputWrapped.put("SAM-PROPS", customProperties);
+		}
+		return outputWrapped;
+	}
+<% }%>
+
+<% if (!actAsProvider) { %>
+	private ESBProviderCallback callback = null;
+
+	public void setProviderCallback(ESBProviderCallback callback) { }
+
+	public ESBEndpointInfo getEndpoint() {
+		return null;
+	}
+<% } %>

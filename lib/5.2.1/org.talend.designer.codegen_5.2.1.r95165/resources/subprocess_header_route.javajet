@@ -1,0 +1,40 @@
+<%@ jet 
+	package="org.talend.designer.codegen.translators" 
+	imports="
+		org.talend.designer.codegen.config.NodesSubTree
+		org.talend.core.model.process.INode
+		java.util.List
+		java.util.HashSet
+		java.util.Set
+		java.util.Map
+		java.util.Vector
+		org.talend.core.model.process.IProcess
+		org.talend.core.model.process.EConnectionType
+		org.talend.core.model.process.IConnection
+		org.talend.core.model.metadata.IMetadataTable 
+		org.talend.core.model.metadata.IMetadataColumn
+		org.talend.designer.codegen.config.CodeGeneratorArgument
+		org.talend.core.model.metadata.types.JavaTypesManager
+		org.talend.core.model.metadata.types.JavaType
+		org.talend.core.model.process.ElementParameterParser
+		org.talend.core.model.process.IHashableInputConnections
+		org.talend.core.model.process.IHashConfiguration
+		org.talend.core.model.process.IHashableColumn
+		org.talend.core.model.utils.NodeUtil
+	" 
+	class="SubProcessHeader"
+	skeleton="subprocess_header_java.skeleton"
+%>
+<%
+	CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+	
+	NodesSubTree subTree = (NodesSubTree) codeGenArgument.getArgument();
+	boolean isRunInMultiThread = codeGenArgument.getIsRunInMultiThread();
+	boolean stat = codeGenArgument.isStatistics();
+%>
+
+/**
+* please initial uri map first before using the returned RouteBuilder
+* @return RouteBuilder
+*/
+public RouteBuilder route() {

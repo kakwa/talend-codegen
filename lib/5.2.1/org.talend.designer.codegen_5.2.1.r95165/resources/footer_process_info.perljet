@@ -1,0 +1,21 @@
+<%@ jet 
+	package="org.talend.designer.codegen.translators"
+	imports="
+		org.talend.designer.codegen.config.CodeGeneratorArgument
+		org.talend.designer.codegen.i18n.Messages
+		org.talend.core.ui.branding.IBrandingService
+		org.talend.core.GlobalServiceRegister
+		java.text.DateFormat
+		java.util.Calendar
+	"
+	class="ProcessInfo" 
+%>
+<%
+	CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+    Integer chars = (Integer) codeGenArgument.getArgument();
+%>
+# +-------------------------------------------------------------------------+
+#      <%=Messages.getString("generatedcode.footerprocess.nbcharsgenerated", chars, ((IBrandingService) GlobalServiceRegister.getDefault().getService(
+                IBrandingService.class)).getFullProductName())%>
+#      on the <%=DateFormat.getDateTimeInstance(DateFormat.LONG,DateFormat.LONG).format(Calendar.getInstance().getTime()) %>
+# +-------------------------------------------------------------------------+
