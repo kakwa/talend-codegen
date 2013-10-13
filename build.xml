@@ -36,6 +36,7 @@
             <src path="src"/>
             <classpath refid="talend-codegen.classpath"/>
         </javac>
+        <copy file="./plugin.xml" todir="build/classes"/>
         <jar destfile="./jar/talend-codegen_${talend_version}.jar" basedir="build/classes"/>
     </target>
     <target description="Build all projects which reference this project. Useful to propagate changes." name="build-refprojects"/>
