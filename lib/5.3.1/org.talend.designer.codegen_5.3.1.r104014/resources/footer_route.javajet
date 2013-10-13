@@ -1,0 +1,469 @@
+<%@ jet 
+	package="org.talend.designer.codegen.translators" 
+	imports="
+		org.talend.core.model.process.IProcess
+		org.talend.designer.codegen.config.CodeGeneratorArgument
+		java.util.Vector
+		java.util.List
+		java.util.ArrayList
+		org.talend.core.model.process.IContextParameter
+		org.talend.core.model.metadata.types.JavaTypesManager
+		org.talend.core.model.utils.JavaResourcesHelper
+		java.util.Map
+		org.talend.core.model.process.ElementParameterParser
+	" 
+	class="Footer" 
+	skeleton="footer_java.skeleton"	
+%>
+<%
+	CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+    Vector v = (Vector) codeGenArgument.getArgument();
+    IProcess process = (IProcess)v.get(0);
+
+	List<? extends INode> processNodes = (List<? extends INode>) process.getGeneratingNodes();
+	List<IContextParameter> params = new ArrayList<IContextParameter>();
+    params=process.getContextManager().getDefaultContext().getContextParameterList();
+    String jobFolderName = JavaResourcesHelper.getJobFolderName(process.getName(), process.getVersion());
+	
+	boolean stats = codeGenArgument.isStatistics();
+	
+%>
+
+protected void doStart() throws java.lang.Exception {
+		// init uriMap first
+		initUriMap();
+		
+		//add route
+		addRouteBuilder(<%=process.getName()%>.this);
+
+		//prepare camel contexts
+		super.doStart();
+		postProcessContext();
+
+		//add jmx notification
+		JmxNotificationEventNotifier notifier = new JmxNotificationEventNotifier();
+		notifier.setSource("MyCamel");
+		notifier.setIgnoreCamelContextEvents(true);
+		notifier.setIgnoreRouteEvents(true);
+		notifier.setIgnoreServiceEvents(true);
+
+		getCamelContexts().get(0).getManagementStrategy().addEventNotifier(notifier);
+
+<%
+StringBuilder librariesSb = new StringBuilder();
+for (INode node : processNodes) {
+	if (node.isActivate()) {
+		if (node.getComponent().getName().equals("cMessagingEndpoint")) {
+			List<Map<String, String>> dependencies = (List<Map<String,String>>) ElementParameterParser.getObjectValue(node, "__HOTLIBS__");
+			for(Map<String, String> dependencie : dependencies){
+				String librarieJar = dependencie.get("LIBPATH");
+				librariesSb.append("\"");
+				librariesSb.append(librarieJar);
+				librariesSb.append("\",");
+			}
+		}
+	}
+}
+if(librariesSb.length()>0){
+%>
+		// add external libraries
+		java.net.URLClassLoader sysloader = (java.net.URLClassLoader) ClassLoader.getSystemClassLoader();
+		java.lang.reflect.Method method = java.net.URLClassLoader.class.getDeclaredMethod("addURL", new Class[] { java.net.URL.class });
+		method.setAccessible(true);
+		String[] libPaths = new String[] {<%=librariesSb.toString()%>};
+		for (String lib : libPaths) {
+			String separator = System.getProperty("path.separator");
+			String[] jarFiles = lib.split(separator);
+			for (String jarFile : jarFiles) {
+				method.invoke(sysloader, new Object[] { new java.io.File(jarFile).toURL() });
+			}
+		}
+<%
+}
+%>
+		//start camel context	
+		getCamelContexts().get(0).start();
+
+
+<% if(stats) { %>
+
+		// add statistics which shows on the connection
+		routines.system.CamelStat runStat = new routines.system.CamelStat(getCamelContexts().get(0));
+
+		runStat.setParams();
+
+		runStat.openSocket(true);
+		runStat.setAllPID(pid, pid, pid, jobName);
+		runStat.startThreadStat(clientHost, portStats);
+		runStat.updateStatOnJob(routines.system.RunStat.JOBSTART, "");
+
+		new Thread(new MyStatThread(runStat)).start();
+<% } //if stats %>
+
+	}
+
+	protected void doStop() throws java.lang.Exception {
+		super.doStop();
+		getCamelContexts().get(0).stop();
+	}
+
+	protected ProducerTemplate findOrCreateCamelTemplate() {
+		return getCamelContexts().get(0).createProducerTemplate();
+	}
+	
+	protected ModelFileGenerator createModelFileGenerator()
+		throws JAXBException {
+		return null;
+	}
+<% if(stats) { %>
+
+	class MyStatThread implements Runnable {
+
+		routines.system.CamelStat stats;
+
+		public MyStatThread(routines.system.CamelStat stats) {
+			this.stats = stats;
+		}
+
+		public void run() {
+			while (true) {
+				try {
+<%
+		for (INode node : processNodes) {
+			if (node.isActivate()) {
+				for(int i=0; i<node.getIncomingConnections().size(); i++) {
+%>
+					stats.updateStatOnConnection("<%=node.getIncomingConnections().get(i).getUniqueName()%>", 1, "<%=node.getUniqueName()%>");
+<%
+				}
+			}
+		}
+%>
+					Thread.sleep(1000);
+				} catch (java.lang.Exception e) {
+					e.printStackTrace();
+				}
+			}
+		}
+	}
+<% } //if stats %>
+
+};
+	mainSupport.run();
+}
+	public void stop() throws java.lang.Exception{
+		if(mainSupport != null){
+			mainSupport.stop();
+		}
+	}
+	
+	public void shutdown() throws java.lang.Exception{
+		if(mainSupport != null){
+			mainSupport.shutdown();
+		}
+	}
+	
+	private Properties defaultProps = new Properties();
+
+	public class ContextProperties extends Properties {
+
+		public ContextProperties(Properties properties) {
+			super(properties);
+		}
+		public ContextProperties() {
+			super();
+		}
+
+		public void synchronizeContext() {
+		<% for (IContextParameter ctxParam : params){
+			String cParaName = ctxParam.getName(); %>
+			if(<%=cParaName %> != null){
+			<% if(ctxParam.getType().equals("id_Date")){ %>
+				String pattern_<%=cParaName %> = "yyyy-MM-dd HH:mm:ss";
+				String value_<%=cParaName %> = "<%=ctxParam.getValue() %>";
+				String[] parts_<%=cParaName %> = value_<%=cParaName %>.split(";");
+				if (parts_<%=cParaName %>.length > 1) {
+					pattern_<%=cParaName %> = parts_<%=cParaName %>[0];
+					this.setProperty("<%=cParaName %>", pattern_<%=cParaName %> + ";" + FormatterUtils.format_Date(<%=cParaName %>, pattern_<%=cParaName %>));
+				} else {
+					this.setProperty("<%=cParaName %>", FormatterUtils.format_Date(<%=cParaName %>, pattern_<%=cParaName %>));
+				}
+			<% } else { %>
+				this.setProperty("<%=cParaName %>", <%=cParaName %>.toString());
+			<% } %>
+			}
+		<% } %>
+		}
+
+<%
+for (IContextParameter ctxParam : params) {
+	if(ctxParam.getType().equals("id_List Of Value") || ctxParam.getType().equals("id_File") || ctxParam.getType().equals("id_Directory")) { %>
+		public String <%=ctxParam.getName()%>;
+		public String get<%=Character.toUpperCase(ctxParam.getName().charAt(0)) + ctxParam.getName().substring(1)%>() {
+			return this.<%=ctxParam.getName()%>;
+		}
+<%	} else { %>
+		public <%=JavaTypesManager.getTypeToGenerate(ctxParam.getType(),true)%> <%=ctxParam.getName()%>;
+		public <%=JavaTypesManager.getTypeToGenerate(ctxParam.getType(),true)%> get<%=Character.toUpperCase(ctxParam.getName().charAt(0)) + ctxParam.getName().substring(1)%>() {
+			return this.<%=ctxParam.getName()%>;
+		}
+<%	}
+}
+%>
+	}
+
+	private ContextProperties context = new ContextProperties();
+	
+	//private final String jobVersion = "<%=process.getVersion() %>";
+	private final String jobName = "<%=codeGenArgument.getJobName() %>";
+	//private final String projectName = "<%=codeGenArgument.getCurrentProjectName() %>";
+	
+	public Integer errorCode = null;
+	
+	public boolean watch = false;
+	//portStats is null, it means don't execute the statistics
+	public Integer portStats = null;
+	public int portTraces = 4334;
+	public String clientHost;
+	public String defaultClientHost = "localhost";
+	public String contextStr = "Default";
+	public String pid = "0";
+	public long startTime = 0;
+	
+	private Properties context_param = new Properties();
+    public Map<String, Object> parentContextMap = new HashMap<String, Object>();
+    
+    public static void main(String[] args){
+    	final <%=process.getName() %> <%=process.getName() %>Class = new <%=process.getName() %>();
+    
+        int exitCode = <%=process.getName() %>Class.runJobInTOS(args);
+         
+         if(exitCode==1)
+       System.exit(exitCode);
+    }    
+   
+ 
+    public String[][] runJob(String[] args) {  
+    
+		int exitCode = runJobInTOS(args);
+		String[][] bufferValue = new String[][] { { Integer.toString(exitCode) } };
+		return bufferValue;
+    }
+    
+    public int runJobInTOS(String[] args) {	
+	
+		String lastStr = "";
+        for (String arg : args) {
+        	if (arg.equalsIgnoreCase("--context_param")) {
+                lastStr = arg;
+            } else if (lastStr.equals("")) {
+                evalParam(arg);
+            } else {
+                evalParam(lastStr + " " + arg);
+                lastStr = "";
+            }
+        }
+		
+		if(clientHost == null) {
+    		clientHost = defaultClientHost;
+    	}
+    	
+    	if(pid == null || "0".equals(pid)) {
+	    	pid = TalendString.getAsciiRandomString(6);
+	    }
+
+		//read context values
+		readContextValues(contextStr);
+		
+		try {
+			run();
+		} catch (java.lang.Exception e) {
+			System.err.println(e.getMessage());
+			e.printStackTrace();
+			return 1;
+		}
+		return 0;
+	}
+	
+	/**
+	* read context values from specified context
+	* @parameter contextName : the name of context while will be used
+	*/
+	public void readContextValues(String contextName){
+			
+		try {
+			java.io.InputStream inContext = <%=process.getName()%>.class.getClassLoader().getResourceAsStream("<%=codeGenArgument.getCurrentProjectName().toLowerCase() %>/<%=jobFolderName %>/contexts/"+contextName+".properties");
+			
+			if (inContext!=null) {
+	    		//defaultProps is in order to keep the original context value
+	    		defaultProps.load(inContext);
+    			inContext.close();
+	    		context = new ContextProperties(defaultProps);
+	    	}else{
+	    		//print info and job continue to run, for case: context_param is not empty.
+	    		System.err.println("Could not find the context " + contextName);
+			}
+			
+			if(!context_param.isEmpty()) {						
+			    context.putAll(context_param);		
+			}
+<% 
+			//for bug TDI-22398
+			for (IContextParameter ctxParam :params){ //start for
+			    String typeToGenerate ="String";
+			    if( !(ctxParam.getType().equals("id_File") || ctxParam.getType().equals("id_Directory") ||ctxParam.getType().equals("id_List Of Value")))
+			    {
+			       typeToGenerate=JavaTypesManager.getTypeToGenerate(ctxParam.getType(),true);
+			    }
+			    if(typeToGenerate.equals("java.util.Date")){ // start if
+			        
+%>
+			try{
+				String context_<%=ctxParam.getName()%>_value = context.getProperty("<%=ctxParam.getName()%>");
+				if (context_<%=ctxParam.getName()%>_value == null){
+					context_<%=ctxParam.getName()%>_value = "";
+				}
+				int context_<%=ctxParam.getName()%>_pos = context_<%=ctxParam.getName()%>_value.indexOf(";");
+				String context_<%=ctxParam.getName()%>_pattern =  "yyyy-MM-dd HH:mm:ss";
+				if(context_<%=ctxParam.getName()%>_pos > -1){
+					context_<%=ctxParam.getName()%>_pattern = context_<%=ctxParam.getName()%>_value.substring(0, context_<%=ctxParam.getName()%>_pos);
+					context_<%=ctxParam.getName()%>_value = context_<%=ctxParam.getName()%>_value.substring(context_<%=ctxParam.getName()%>_pos + 1);
+				}
+				
+			    context.<%=ctxParam.getName()%>=(java.util.Date)(new java.text.SimpleDateFormat(context_<%=ctxParam.getName()%>_pattern).parse(context_<%=ctxParam.getName()%>_value));
+			   
+			}catch(ParseException e)
+			{
+			    context.<%=ctxParam.getName()%>=null;
+			}
+<%
+		    	}else if(typeToGenerate.equals("Object")||typeToGenerate.equals("String")||typeToGenerate.equals("java.lang.String") ){
+%>
+			    	context.<%=ctxParam.getName()%>=(<%=typeToGenerate%>) context.getProperty("<%=ctxParam.getName()%>");
+<%
+				}else if(typeToGenerate.equals("Character")&&ctxParam.getName()!=null){
+%>
+			 	context.<%=ctxParam.getName()%>= new java.text.StringCharacterIterator(context.getProperty("<%=ctxParam.getName()%>")).first();			 
+<%
+            	}else{
+%> 
+			 		try{
+			     		context.<%=ctxParam.getName()%>=routines.system.ParserUtils.parseTo_<%=typeToGenerate%> (context.getProperty("<%=ctxParam.getName()%>"));
+			 		}catch(NumberFormatException e){
+			     		context.<%=ctxParam.getName()%>=null;
+			 		}
+<%
+			    } //end if
+			} //end for
+%>
+    	} catch (java.io.IOException ie) {
+    		System.err.println("Could not load context "+contextName);
+    		ie.printStackTrace();
+    	}
+    	
+    	
+		// get context value from parent directly
+		if (parentContextMap != null && !parentContextMap.isEmpty()) {
+<% 
+			for (IContextParameter ctxParam :params){
+				//about the type, they are same as header.javajet
+				String typeToGenerate = "String";
+				if(ctxParam.getType().equals("id_List Of Value") || ctxParam.getType().equals("id_File") || ctxParam.getType().equals("id_Directory")){
+					typeToGenerate = "String";
+				}else{			 
+					typeToGenerate = JavaTypesManager.getTypeToGenerate(ctxParam.getType(),true);
+				}
+%>				if (parentContextMap.containsKey("<%=ctxParam.getName()%>")) {
+				context.<%=ctxParam.getName()%> = (<%=typeToGenerate %>) parentContextMap.get("<%=ctxParam.getName()%>");
+			}
+<%
+		}
+%>
+		}    
+	}
+
+	private void evalParam(String arg) {
+	if (arg.startsWith("--watch")) {
+    		watch = true;
+    	} else if (arg.startsWith("--stat_port=")) {
+			String portStatsStr = arg.substring(12);
+			if (portStatsStr != null && !portStatsStr.equals("null")) {
+				portStats = Integer.parseInt(portStatsStr);
+			}    		
+    	} else if (arg.startsWith("--trace_port=")) {
+    		portTraces = Integer.parseInt(arg.substring(13));
+    	} else if (arg.startsWith("--client_host=")) {
+    		clientHost = arg.substring(14);
+    	} else if (arg.startsWith("--context=")) {
+    		contextStr = arg.substring(10);
+    	}if (arg.startsWith("--pid=")) {
+    		pid = arg.substring(6);
+    	} else if (arg.startsWith("--context_param")) {   		 
+            String keyValue = arg.substring(16);           
+            int index = -1;
+            if (keyValue != null && (index = keyValue.indexOf('=')) > -1) {
+                context_param.put(keyValue.substring(0, index), keyValue.substring(index + 1));
+            }
+    	}	
+	}
+}
+
+class <%=process.getName()%>_Registry implements Registry {
+
+	private Map<String, Object> map = new HashMap<String, Object>();
+
+	private Registry wrapped = null;
+
+	public <%=process.getName()%>_Registry() {
+		this(null);
+	}
+
+	public <%=process.getName()%>_Registry(Registry wrapped) {
+		this.wrapped = wrapped;
+	}
+
+	public Object lookup(String name) {
+		Object obj = null;
+		if (wrapped != null) {
+			obj = wrapped.lookup(name);
+		}
+		if (obj == null) {
+			obj = map.get(name);
+		}
+		return obj;
+	}
+
+	public <T> T lookup(String name, Class<T> type) {
+		T t = null;
+		if (wrapped != null) {
+			t = wrapped.lookup(name, type);
+		}
+		if (t == null) {
+			t = (T) map.get(name);
+		}
+		return t;
+	}
+
+	public <T> Map<String, T> lookupByType(Class<T> type) {
+		Map<String, T> result = null;
+		if (wrapped != null) {
+			result = wrapped.lookupByType(type);
+		}
+		if (result == null) {
+			result = new HashMap<String, T>();
+		}
+		if (result.isEmpty()) {
+			for (Map.Entry<String, Object> entry : map.entrySet()) {
+				if (type.isInstance(entry.getValue())) {
+					result.put(entry.getKey(), type.cast(entry.getValue()));
+				}
+			}
+		}
+		return result;
+	}
+
+	public void register(String name, Object instance) {
+		map.put(name, instance);
+	}
+
+}

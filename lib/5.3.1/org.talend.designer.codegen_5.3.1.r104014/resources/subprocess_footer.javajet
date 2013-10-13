@@ -1,0 +1,285 @@
+<%@ jet 
+	package="org.talend.designer.codegen.translators" 
+	imports="
+		org.talend.designer.codegen.config.NodesSubTree
+		org.talend.designer.codegen.config.CodeGeneratorArgument
+		org.talend.core.model.metadata.IMetadataTable
+		org.talend.core.model.process.INode
+		org.talend.core.model.process.IConnection
+		org.talend.core.model.process.EConnectionType
+		org.talend.core.model.process.ElementParameterParser
+		java.util.List
+		java.util.Iterator
+	" 
+	class="SubProcessFooter" 
+%>
+<%
+	CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+	boolean stat = codeGenArgument.isStatistics();
+	NodesSubTree subTree = (NodesSubTree) codeGenArgument.getArgument();
+	
+	for (INode node : subTree.getNodes()) {
+		List<IMetadataTable> metadatas = node.getMetadataList();
+		List< ? extends IConnection> conns = node.getOutgoingConnections();
+	}
+
+	boolean isParallelize = false;
+	for (INode node : subTree.getNodes()) {
+		if(node!=null){
+			String parallelize = ElementParameterParser.getValue(node, "__PARALLELIZE__");
+			if(parallelize!=null &&parallelize.equals("true")){
+				// temporary modification : if tAsyncIn is available, this is always a parallelized process
+				isParallelize = true;
+			}
+		}
+	}
+	if(isParallelize){
+%>
+
+					} catch (java.lang.Exception e) {
+						this.status = "failure";
+						Integer localErrorCode = (Integer) (((java.util.Map) threadLocal.get()).get("errorCode"));
+						if (localErrorCode != null) {
+							if (this.errorCode == null || localErrorCode.compareTo(this.errorCode) > 0) {
+								this.errorCode = localErrorCode;
+							}
+						}					
+			            pool.setErrorThread(this, new TalendException(e, currentComponent, globalMap));
+			            //pool.setErrorThread(this,e);
+			            pool.stopAllThreads();
+					}
+					this.isRunning = false;
+					
+					Integer localErrorCode = (Integer) (((java.util.Map) threadLocal.get()).get("errorCode"));
+					String localStatus = (String) (((java.util.Map) threadLocal.get()).get("status"));
+					if (localErrorCode != null) {
+						if (this.errorCode == null || localErrorCode.compareTo(this.errorCode) > 0) {
+							this.errorCode = localErrorCode;
+						}
+					} 
+					if (!this.status.equals("failure")) {
+						this.status = localStatus;
+					}
+			
+					pool.getTalendThreadResult().setErrorCode(this.errorCode);
+					pool.getTalendThreadResult().setStatus(this.status);	
+				}//Run method
+			}//ParallelThread class
+
+			List<String[]> buffer = (List<String[]>) globalMap
+					.get("PARALLEL_FLOW_BUFFER_<%=(subTree.getName()).replaceAll("tAsyncIn", "tAsyncOut")%>");
+
+			if (pool.isFull()) {
+				ParallelThread pt = pool.getFreeThread();// wait for Free Thread
+				if (pt!= null) {
+					pt.putBuffer(buffer);// notify the ParallelThread
+				}
+			} else {
+				// Start a new thread
+				<%=subTree.getName() %>_ParallelThread pt = new <%=subTree.getName()%>_ParallelThread(
+						globalMap, (Object[]) globalMap
+								.get("PARALLEL_FLOW_LOCK_<%=(subTree.getName()).replaceAll("tAsyncIn", "tAsyncOut")%>"));
+				pt.putBuffer(buffer);
+				pool.execThread(pt);
+			}
+		} catch (InterruptedException e) {
+			e.printStackTrace();
+		} catch (java.lang.Exception te) {
+			throw new TalendException(te, currentComponent, globalMap);
+		}
+<%
+	}else{
+%>
+
+
+
+<%
+//this part for "Resume Management"
+{
+    INode firstNode = subTree.getNode(subTree.getName());
+    
+    List<String> beforeSubProcesses = subTree.getBeforeSubProcesses();
+    
+    //System.out.println(firstNode.getUniqueName());
+    List<? extends IConnection> outConns = firstNode.getOutgoingConnections();
+    
+    //System.out.println(inConns.size());
+    for(IConnection conn : outConns){
+    
+//    	boolean activeResume = "true".equals(ElementParameterParser.getValue(conn, "__RESUMING_CHECKPOINT__"));
+    	boolean activeResume = true;
+    	
+    	//System.out.println("Test:" + ElementParameterParser.getValue(conn, "__RESUMING_CHECKPOINT__"));
+    	
+    	String uniqueNameTargetNode = conn.getTarget().getUniqueName();
+    	
+   		EConnectionType lineStyle = conn.getLineStyle();
+
+    }
+}
+%>
+}//end the resume
+
+<%
+//this part for "Resume Management"
+{
+    INode firstNode = subTree.getNode(subTree.getName());
+    
+    List<String> beforeSubProcesses = subTree.getBeforeSubProcesses();
+    
+    //System.out.println(firstNode.getUniqueName());
+    List<? extends IConnection> outConns = firstNode.getOutgoingConnections();
+    
+    //System.out.println(inConns.size());
+    for(IConnection conn : outConns){
+    
+//    	boolean activeResume = "true".equals(ElementParameterParser.getValue(conn, "__RESUMING_CHECKPOINT__"));
+    	boolean activeResume = true;
+    	
+    	//System.out.println("Test:" + ElementParameterParser.getValue(conn, "__RESUMING_CHECKPOINT__"));
+    	
+    	String uniqueNameTargetNode = conn.getTarget().getUniqueName();
+    	
+   		EConnectionType lineStyle = conn.getLineStyle();
+
+		if(beforeSubProcesses.indexOf(uniqueNameTargetNode) != -1) {   		
+	    	if(activeResume){
+	    		%>
+	    			if( resumeEntryMethodName == null || globalResumeTicket){
+	    				resumeUtil.addLog("CHECKPOINT", "CONNECTION:<%=lineStyle.getName() %>:<%=subTree.getName() %>:<%=conn.getName() %><%=conn.getOutputId() > 0 ? conn.getOutputId() : "" %>", "", Thread.currentThread().getId() + "", "", "", "", "", "");
+					}	    				    			
+	    		<%
+	    	}
+	    	%>
+    		<%
+			if(stat){
+			%>
+				if(execStat){    	
+					runStat.updateStatOnConnection("<%=conn.getUniqueName() %>", 0, "ok");
+				} 
+			<%
+			}
+%>
+			<%= uniqueNameTargetNode %>Process(globalMap); 
+<%
+    	}
+    }
+}
+%>
+
+<%	
+	if (subTree.getRootNode().getProcess().getNodesOfType("tFlowMeterCatcher").size() > 0 
+		&& subTree.getRootNode().getProcess().getNodesOfType("tFlowMeter").size() >0 ) {
+		List<INode> metterCatchers = (List<INode>)subTree.getRootNode().getProcess().getNodesOfType("tFlowMeterCatcher");
+		List<INode> metters = (List<INode>)subTree.getRootNode().getProcess().getNodesOfType("tFlowMeter");
+		List<INode> nodes = (List<INode>)subTree.getNodes();
+		
+		boolean hasMetterProcess = false;
+		for(INode tmp : nodes)
+		{
+			for(INode metter : metters)
+			{
+				if(tmp.getUniqueName().equals(metter.getUniqueName()))
+				{
+					hasMetterProcess = true;
+					break;
+				}
+			}
+			if(hasMetterProcess)
+			{
+				break;
+			}
+		}
+		if(hasMetterProcess)
+		{
+			for (INode metterCatcher : metterCatchers) {
+				
+%>
+	<%=metterCatcher.getDesignSubjobStartNode().getUniqueName() %>Process(globalMap);
+<%      
+
+			}
+		}
+	}
+%>
+
+	
+	} catch(java.lang.Exception e) {	
+
+		throw new TalendException(e, currentComponent, globalMap);
+	
+	} catch(java.lang.Error error) {
+	
+<%
+	if(stat){
+%>
+		runStat.stopThreadStat();
+<%
+	}
+%>
+		throw error;
+
+	}
+<%
+	//generate the code to free memory for lookup link and virtual component buffered datas 
+	boolean firstIn = true;
+	boolean needGc = false;
+	List<INode> nodes = subTree.getNodes();
+	for(INode node:nodes){
+	
+	boolean isVirtualGenerateNode = node.isVirtualGenerateNode();
+	
+	//check the virtual component generate node
+	if(isVirtualGenerateNode){
+		String origin  = ElementParameterParser.getValue(node, "__ORIGIN__");
+		if(origin != null && !"".equals(origin)){
+			if(!needGc) needGc = true;
+	%>
+				<%if(firstIn){%> finally{ <% firstIn = false;}%>
+				//free memory for "<%=node.getUniqueName() %>"
+				globalMap.remove("<%=origin %>");
+	<%
+		}
+	}else{
+	//check the Lookup link
+		List<? extends IConnection> lookupInput = node.getIncomingConnections(EConnectionType.FLOW_REF);
+		if(lookupInput!=null && lookupInput.size()>0){
+			if(!needGc) needGc = true;
+			//check the tMap like this, instanceof can't work			
+			if(node.getClass().getName().equals("org.talend.designer.mapper.MapperComponent")){
+				for(IConnection connection:lookupInput){						
+     %>
+     			<%if(firstIn){%> finally{ <% firstIn = false;}%>
+     			//free memory for "<%=node.getUniqueName() %>"
+     			globalMap.remove("tHash_Lookup_<%=connection.getName() %>"); 
+     <%
+            	}
+            }else{
+            	for(IConnection connection:lookupInput){
+      %>      	
+      			<%if(firstIn){%> finally{ <% firstIn = false;}%>
+      			//free memory for "<%=node.getUniqueName() %>"
+				globalMap.remove("tHash_<%=connection.getName() %>");
+      <%      		 
+				} 
+			} 
+		}
+	}
+}
+
+	if(needGc) {
+	%>		
+				
+		}		
+	<%
+	}
+}//isParallelize
+	%>
+	
+	globalMap.put("<%=subTree.getName() %>_SUBPROCESS_STATE", 1);
+}
+<% if (subTree.isMethodSizeNeeded()){ %>
+/**
+ * End of Function: <%=subTree.getName() %>Process 
+ */
+ <% } %>

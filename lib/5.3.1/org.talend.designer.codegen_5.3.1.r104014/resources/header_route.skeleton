@@ -1,0 +1,36 @@
+public class CLASS
+{
+   	private static String getValue(INode node,String __ID__){
+   		return ElementParameterParser.getValue(node, __ID__);
+   	}
+   	
+	private static boolean getBoolValue(INode node,String __ID__){
+		return "true".equals(getValue(node,__ID__));
+	}
+	
+	private static <T> T getObjectValue(INode node,String __ID__){
+		return (T)ElementParameterParser.getObjectValue(node, __ID__);
+	}
+	
+	private static void appendParamWhenNotDefaultNorEmpty(StringBuilder sb,String param,String paramV,String defaultV){
+		if(paramV!=null && !paramV.trim().equals("") && !defaultV.equals(paramV)){
+					sb.append("+\"&"+param+"=\"+");
+					//the first '&' should replace to '?' later.
+					sb.append(paramV);
+				}
+	}
+	
+	private static void appendTableParams(StringBuilder sb,List<Map<String, String>> tableValues){
+		for (Map<String, String> map : tableValues) {
+				String argName = map.get("NAME").trim();
+				String argValue = map.get("VALUE").trim();
+				sb.append("+\"&\"+" + argName + "+\"=\"+" + argValue);
+		}
+	}
+	
+	//the generate method.
+	public String generate(CodeGeneratorArgument argument)
+   	{
+     	return "";
+   	}
+}

@@ -12,6 +12,20 @@ Compiling & Configuring
  * Export as 'Plug-in Development/Deployable plug-ins and fragments'
  * Copy generated .jar to plugins directory of Talend
 
+or (because svn repo of talend is quite big (~4Go for a given tag):
+
+ * `make jar_<your talend version>` (if your version is listed in ./lib/)
+ * Copy `jar/talend-codegen_<your talend version>.jar` to plugins directory of Talend
+
+If you fill lucky, you can try to use mismatched versions :).
+
+Adding a new version of Talend
+------------------------------
+
+Just download new Talend version and add the needed jars and .class files from this version in
+`lib/<new_version>/`, and add an entry in `Makefile`.
+Look in `tools/` and the other versions to find which jars/.class files are necessary.
+
 Usage
 -----
 
@@ -47,5 +61,4 @@ Example
 This example is taken from our Jenkins build process - $WORKSPACE is the location of the talend project
 
 TOS_DI-linux-gtk-x86 -nosplash --launcher.suppressErrors -data $WORKSPACE/../.talend-workspace --clean_component_cache -application au.org.emii.talend.codegen.Generator -jobName ThreddsExample -projectDir $WORKSPACE -targetDir $WORKSPACE/.talend-build -componentDir /par2/git-repos/talend_components 
- 
  

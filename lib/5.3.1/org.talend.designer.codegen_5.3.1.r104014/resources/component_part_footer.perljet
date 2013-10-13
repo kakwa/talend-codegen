@@ -1,0 +1,234 @@
+<%@ jet 
+package="org.talend.designer.codegen.translators" 
+imports="
+    org.talend.core.model.process.INode
+    org.talend.core.model.temp.ECodePart		
+    org.talend.core.model.process.ElementParameterParser
+    org.talend.core.model.process.IConnection 
+    org.talend.core.model.metadata.IMetadataTable 
+    org.talend.core.model.process.EConnectionType 
+    org.talend.core.model.process.IExternalNode
+    org.talend.designer.codegen.config.CodeGeneratorArgument
+    java.util.List
+"
+class="ComponentPartFooter"     
+%>
+<%
+
+CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+INode node = (INode)codeGenArgument.getArgument();
+String cid = node.getUniqueName();
+ECodePart codePart = codeGenArgument.getCodePart();
+boolean trace = codeGenArgument.isTrace();
+boolean stat = codeGenArgument.isStatistics();
+
+String componentName = node.getComponent().getName();
+%>
+
+<%
+if (!(node instanceof IExternalNode)) {
+    if (codePart.equals(ECodePart.BEGIN)) {
+        List<IMetadataTable> metadatas = node.getMetadataList();
+        if ((metadatas!=null)&&(metadatas.size()>0)) {
+            IMetadataTable metadata = metadatas.get(0);
+            if (metadata!=null) {
+                List< ? extends IConnection> conns =
+                    node.getOutgoingConnections();
+          
+                for (IConnection conn : conns) {
+                    if (conn.getLineStyle().equals(EConnectionType.FLOW_MAIN)) {
+                        if (trace) {
+%>
+
+my @colnames_<%=conn.getName() %> = undef;
+if (exists $desc_<%=node.getUniqueName() %>{colnames}) {
+    @colnames_<%=conn.getName() %> = @{ $desc_<%=node.getUniqueName() %>{colnames} };
+}
+elsif (scalar @{ $desc_<%=node.getUniqueName() %>{schema} }) {
+    @colnames_<%=conn.getName() %> = map { $_->{name} } @{ $desc_<%=node.getUniqueName() %>{schema} };
+}
+
+<%
+                        }
+                    }
+                }
+            }
+        }
+
+        for (IConnection conn : node.getOutgoingConnections()) {
+            if (conn.getLineStyle().equals(EConnectionType.ITERATE)) {
+	            boolean parallelIterate = "true".equals(ElementParameterParser.getValue(conn, "__ENABLE_PARALLEL__"));
+				String nbParallelIterate = "2";
+	            if (parallelIterate) {
+	            	nbParallelIterate = (String)ElementParameterParser.getValue(conn,"__NUMBER_PARALLEL__");
+	            }
+            
+                if (parallelIterate) {
+%>
+    wait_for_a_kid() if keys %running_pids_<%=cid%> >= <%=nbParallelIterate%>;
+
+    $exec_number++;
+
+    if (my $pid = fork) {
+        # parent does...
+        $running_pids_<%=cid%>{$pid} = 1;
+
+        $|++;
+        printf(
+            '[<%=cid%>][%s] parallel execution #%u running'."\n",
+            getDate('CCYYMMDD hh:mm:ss'),
+            scalar keys %running_pids_<%=cid%>
+        );
+<%
+                    if (stat) {
+%>
+SendStat(
+    '<%=conn.getUniqueName() %>',
+    'exec'.$exec_number,
+    'start'
+);
+<%
+                    }
+%>
+    }
+    else {
+<%
+                }
+            }
+        }
+    }
+
+    if (codePart.equals(ECodePart.MAIN)) {
+        List<IMetadataTable> metadatas = node.getMetadataList();
+        if ((metadatas!=null)&&(metadatas.size()>0)) {
+            IMetadataTable metadata = metadatas.get(0);
+            if (metadata!=null) {
+                List< ? extends IConnection> conns =
+                    node.getOutgoingConnections();
+
+                for (IConnection conn : conns) {
+                    EConnectionType lineStyle = conn.getLineStyle();
+
+                    if (lineStyle.equals(EConnectionType.FLOW_MAIN)
+                        || lineStyle.equals(EConnectionType.FLOW_MERGE)) {
+
+                        String perlArrayRefName = node.getUniqueName();
+                        if (conn.getConnectorName()!=null) {
+                        	if (!conn.getConnectorName().equals("FLOW")) {
+                            	perlArrayRefName = perlArrayRefName + "_" + conn.getConnectorName();
+                        	}
+                        }
+
+                        if (componentName.equals("tReplicate")) {
+%>
+my $<%=conn.getName() %> = [@$<%=perlArrayRefName %>];
+<%
+                        }
+                        else {
+%>
+my $<%=conn.getName() %> = $<%=perlArrayRefName %>;
+<%
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+if (codePart.equals(ECodePart.MAIN)) {
+    List<IMetadataTable> metadatas = node.getMetadataList();
+    if ((metadatas!=null)&&(metadatas.size()>0)) {
+        IMetadataTable metadata = metadatas.get(0);
+        if (metadata!=null) {
+            List< ? extends IConnection> conns =
+                node.getOutgoingConnections();
+
+            for (IConnection conn : conns) {
+                if (conn.getLineStyle().equals(EConnectionType.FLOW_MAIN)) {
+                    if (trace) {
+%>
+
+# here we dump the line content for trace purpose
+SendTrace(
+    '<%=conn.getName() %>',
+    ++$<%=conn.getName() %>_trace_num,
+    $<%=conn.getName() %>,
+    \@colnames_<%=conn.getName() %>,
+);
+
+<%
+                    }
+                }
+            }
+        }
+    }
+}
+if (codePart.equals(ECodePart.END)) {
+%>
+
+$_globals{<%=node.getUniqueName() %>}{OK} = true;
+
+<%
+    String statCatcherEnabled = ElementParameterParser.getValue(
+      node,
+      "__TSTATCATCHER_STATS__"
+    );
+
+    if (statCatcherEnabled.equals("true")) {
+        for (INode statCatcher : node.getProcess().getNodesOfType("tStatCatcher")) {
+%>
+<%=statCatcher.getUniqueName()%>_subprocess(
+    message_type => 'end',
+    message => 'success',
+    duration => int(
+        tv_interval(
+            $_globals{<%=node.getUniqueName() %>}{start},
+            [gettimeofday]
+        )
+        * 1000
+    ),
+    origin  => '<%=node.getUniqueName() %>',
+);
+<%
+        }
+    }
+%>
+
+<%
+    for (IConnection outgoingConn : node.getOutgoingConnections()) {
+    	if (outgoingConn.getTarget().isActivate()) {
+            if (outgoingConn.getLineStyle().equals(EConnectionType.ITERATE)) {
+	            boolean parallelIterate = "true".equals(ElementParameterParser.getValue(outgoingConn, "__ENABLE_PARALLEL__"));
+            
+                if (parallelIterate) {
+%>
+1 while wait_for_a_kid();
+$exec_number = undef;
+<%
+                }
+            }
+
+    	    if (outgoingConn.getLineStyle().equals(EConnectionType.ON_COMPONENT_OK)) { %>
+  
+<%=outgoingConn.getTarget().getUniqueName() %>_subprocess(); 
+  
+<% 
+    	    }
+ 
+        	if (outgoingConn.getLineStyle().equals(EConnectionType.RUN_IF)) {
+%>
+
+if (<%=outgoingConn.getCondition() %>) {
+    <%=outgoingConn.getTarget().getUniqueName() %>_subprocess();
+}
+
+<%
+        	}
+        }
+    }
+}
+%>
+# +-------------------------------------------------------------------------+
+# | [<%=node.getUniqueName() %> <%=codePart %> ] stop
+# +-------------------------------------------------------------------------+ 
