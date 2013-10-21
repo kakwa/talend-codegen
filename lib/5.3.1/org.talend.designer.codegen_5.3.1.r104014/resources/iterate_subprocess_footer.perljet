@@ -1,4 +1,0 @@
-<%@ jet 
-	package="org.talend.designer.codegen.translators" 
-	class="IterateSubProcessFooter" 
-%>

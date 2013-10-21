@@ -1,3 +1,7 @@
+all: build_jar_5.2.1
+
+clean: clean_5.2.1
+
 build_jar_5.3.1:
 	ant build -Dtalend_version=5.3.1 -Dtalend_revision=104014
 clean_5.3.1:
