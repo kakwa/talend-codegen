@@ -3,8 +3,41 @@ talend-codegen
 
 Command line code generation (job export) plugin for talend
 
+Download
+--------
+
+https://github.com/kakwa/talend-codegen/releases
+
 Compiling & Configuring
 -----------------------
+
+Build:
+
+```bash
+#to build the latest version available
+> make
+
+#ls in the out directory
+>ls jar/
+talend-codegen_5.4.1.jar
+
+#build an older version
+>make build_jar_5.3.1
+
+#build directly with ant:
+> cat Makefile
+build_jar_5.4.1:
+    ant build -Dtalend_version=5.4.1 -Dtalend_revision=111943
+clean_5.4.1:
+    ant clean -Dtalend_version=5.4.1 -Dtalend_revision=111943
+
+#select your version
+> ant build -Dtalend_version=5.4.1 -Dtalend_revision=111943
+```
+
+And copy `jar/talend-codegen<version>.jar` to the plugins directory of Talend.
+
+or with the talend sources and eclipse:
 
  * Install eclipse
  * Import talend open studio source code from SVN (http://talendforge.org/svn/tos/tags/release-5_2_2)
@@ -12,19 +45,22 @@ Compiling & Configuring
  * Export as 'Plug-in Development/Deployable plug-ins and fragments'
  * Copy generated .jar to plugins directory of Talend
 
-or (because svn repo of talend is quite big (~4Go for a given tag):
-
- * `make jar_<your talend version>` (if your version is listed in ./lib/)
- * Copy `jar/talend-codegen_<your talend version>.jar` to plugins directory of Talend
+(svn repo of talend is quite big (~4Go for a given tag)
 
 If you fill lucky, you can try to use mismatched versions :).
 
 Adding a new version of Talend
 ------------------------------
 
-Just download new Talend version and add the needed jars and .class files from this version in
-`lib/<new_version>/`, and add an entry in `Makefile`.
-Look in `tools/` and the other versions to find which jars/.class files are necessary.
+* Create a new directory `lib/<new version>`
+* Download the new Talend version 
+* Add the needed jars and .class files from this version in `lib/<new version>/` (you can run `get_needed_jar.sh <plugin dir of talend> <this repo>/lib/<new version>/`
+* Add a new entry in the Makefile
+* try to build the jar
+* eventualy fix it (hint: ./tools/find_jar.sh -h)
+* create a tag with only the latest version of the jars/classes
+
+A script doing all these steps automaticaly may come in the futur.
 
 Usage
 -----
