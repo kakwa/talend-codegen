@@ -7,7 +7,9 @@ then
     exit 1
 fi
 
-stuff="org.apache.log4j
+stuff="
+org.apache.log4j
+org.eclipse.swt.motif.linux.x86
 org.eclipse.ui.ide 
 org.apache.log4j
 org.eclipse.ui.workbench 
@@ -27,10 +29,12 @@ org.eclipse.equinox.common
 org.talend.model 
 org.eclipse.jface 
 org.talend.repository 
-org.eclipse.osgi"
+org.eclipse.osgi
+org.talend.core.ui
+"
 
 
 for js in `echo $stuff`
 do
-    cp -r $1/$js* $2 
+    cp -r $1/${js}_* $2 
 done

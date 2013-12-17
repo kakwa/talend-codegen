@@ -1,0 +1,158 @@
+<%@ jet
+    package="org.talend.designer.codegen.translators.common"
+    imports="
+        java.util.Vector
+        java.util.List
+
+        org.talend.core.model.process.INode
+        org.talend.core.model.process.IProcess
+		org.talend.core.model.process.ElementParameterParser
+
+        org.talend.designer.codegen.config.CodeGeneratorArgument
+    "
+    class="Header_additional"
+%>
+<%
+CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+Vector v = (Vector) codeGenArgument.getArgument();
+IProcess process = (IProcess) v.get(0);
+
+boolean useSAML = false;
+
+List<? extends INode> restClients = process.getNodesOfType("tRESTClient");
+for (INode restClient : restClients) {
+	boolean useAuth = Boolean.valueOf(ElementParameterParser.getValue(restClient, "__NEED_AUTH__"));
+	String authType = ElementParameterParser.getValue(restClient, "__AUTH_TYPE__");
+	if (useAuth && "SAML".equals(authType)) {
+		useSAML = true;
+		break;
+	}
+}
+
+if (useSAML) { %>
+
+private java.util.Map<String, String> stsProps;
+
+public void setStsProps(java.util.Map<String, String> stsProps) {
+    this.stsProps = stsProps;
+}
+
+public static class STSRESTOutInterceptor
+        extends org.apache.cxf.phase.AbstractPhaseInterceptor<org.apache.cxf.message.Message> {
+
+    private org.apache.cxf.ws.security.trust.STSClient stsClient;
+    private org.apache.cxf.ws.security.tokenstore.SecurityToken securityToken;
+
+    public STSRESTOutInterceptor() {
+        super(org.apache.cxf.phase.Phase.WRITE);
+        addBefore(org.apache.cxf.rs.security.saml.SamlFormOutInterceptor.class.getName());
+        addBefore(org.apache.cxf.rs.security.saml.SamlHeaderOutInterceptor.class.getName());
+    }
+
+    public void handleMessage(org.apache.cxf.message.Message message)
+            throws org.apache.cxf.interceptor.Fault {
+        if (!isRequestor(message)) {
+            return;
+        }
+
+        if (null != securityToken && !securityToken.isExpired() && null != securityToken.getToken()) {
+            message.setContextualProperty(
+                    org.apache.cxf.rs.security.saml.SAMLConstants.SAML_TOKEN_ELEMENT,
+                    securityToken.getToken());
+            return;
+        }
+
+        if (stsClient == null) {
+            return;
+        }
+
+        try {
+            // Transpose ActAs/OnBehalfOf info from original request to the STS client.
+            Object token = message.getContextualProperty(org.apache.cxf.ws.security.SecurityConstants.STS_TOKEN_ACT_AS);
+            if (null != token) {
+                stsClient.setActAs(token);
+            }
+            token = message.getContextualProperty(org.apache.cxf.ws.security.SecurityConstants.STS_TOKEN_ON_BEHALF_OF);
+            if (null != token) {
+                stsClient.setOnBehalfOf(token);
+            }
+
+            Object o = message.getContextualProperty(org.apache.cxf.ws.security.SecurityConstants.STS_APPLIES_TO);
+            String appliesTo = o == null ? null : o.toString();
+            appliesTo = appliesTo == null ? message.getContextualProperty(
+                    org.apache.cxf.message.Message.ENDPOINT_ADDRESS).toString() : appliesTo;
+
+            stsClient.setMessage(message);
+
+            org.apache.cxf.ws.security.tokenstore.SecurityToken tok = null;
+            if (securityToken == null) {
+                tok = stsClient.requestSecurityToken(appliesTo);
+            } else {
+                tok = stsClient.renewSecurityToken(securityToken);
+            }
+            securityToken = tok;
+
+            if (null != securityToken && !securityToken.isExpired() && null != securityToken.getToken()) {
+                message.setContextualProperty(
+                        org.apache.cxf.rs.security.saml.SAMLConstants.SAML_TOKEN_ELEMENT,
+                        securityToken.getToken());
+                return;
+            }
+        } catch (RuntimeException ex) {
+            // ex.printStackTrace();
+            throw new org.apache.cxf.interceptor.Fault(ex);
+        } catch (Exception ex) {
+            java.io.StringWriter sw = new java.io.StringWriter();
+            ex.printStackTrace(new java.io.PrintWriter(sw));
+            throw new org.apache.cxf.interceptor.Fault(
+                    new RuntimeException(ex.getMessage() + ", stacktrace: " + sw.toString()));
+        }
+    }
+
+    public org.apache.cxf.ws.security.trust.STSClient getStsClient() {
+        return stsClient;
+    }
+
+    /**
+     * Set the STSClient object. This does the heavy lifting to get a (SAML) Token from the STS.
+     * @param stsClient the STSClient object.
+     */
+    public void setStsClient(org.apache.cxf.ws.security.trust.STSClient stsClient) {
+        this.stsClient = stsClient;
+    }
+}
+
+public static org.apache.cxf.ws.security.trust.STSClient createStsClient(
+        org.apache.cxf.Bus bus, java.util.Map<String, String> stsProps, String username, String password) {
+
+    final org.apache.cxf.ws.security.trust.STSClient stsClient =
+            new org.apache.cxf.ws.security.trust.STSClient(bus);
+
+    stsClient.setWsdlLocation(stsProps.get("sts.wsdl.location"));
+    stsClient.setServiceQName(new javax.xml.namespace.QName(
+            stsProps.get("sts.namespace"), stsProps.get("sts.service.name")));
+    stsClient.setEndpointQName(new javax.xml.namespace.QName(
+            stsProps.get("sts.namespace"), stsProps.get("sts.endpoint.name")));
+
+    java.util.Map<String, Object> props = new java.util.HashMap<String, Object>();
+
+    for (java.util.Map.Entry<String, String> entry : stsProps.entrySet()) {
+        if (org.apache.cxf.ws.security.SecurityConstants.ALL_PROPERTIES.contains(entry.getKey())) {
+            String value = entry.getValue();
+            value = value.startsWith("file:") ? value.replaceAll("\\\\", "/") : value;
+            props.put(entry.getKey(), value);
+        }
+    }
+
+    props.put(org.apache.cxf.ws.security.SecurityConstants.USERNAME, username);
+    props.put(org.apache.cxf.ws.security.SecurityConstants.PASSWORD, password);
+    stsClient.setProperties(props);
+
+    stsClient.setAllowRenewingAfterExpiry(true);
+    stsClient.setEnableLifetime(true);
+    stsClient.setTokenType("http://docs.oasis-open.org/wss/oasis-wss-saml-token-profile-1.1#SAMLV2.0");
+    stsClient.setKeyType("http://docs.oasis-open.org/ws-sx/ws-trust/200512/Bearer");
+
+    return stsClient;
+}
+<% } %>

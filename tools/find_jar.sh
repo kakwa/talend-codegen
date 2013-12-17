@@ -10,7 +10,7 @@ help(){
   echo "  -s <source dir>: directory containing the project sources"
   echo "  -j <jar dir>: directory containing the jars or the .class"
   echo "  -o <output file for jars>: file for the list of matching jars"
-  echo "  -o <output file for .class>: file for the list of matching .class files"
+  echo "  -c <output file for .class>: file for the list of matching .class files"
   exit 1
 }
 
