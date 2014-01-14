@@ -98,3 +98,7 @@ This example is taken from our Jenkins build process - $WORKSPACE is the locatio
 
 TOS_DI-linux-gtk-x86 -nosplash --launcher.suppressErrors -data $WORKSPACE/../.talend-workspace --clean_component_cache -application au.org.emii.talend.codegen.Generator -jobName ThreddsExample -projectDir $WORKSPACE -targetDir $WORKSPACE/.talend-build -componentDir /par2/git-repos/talend_components 
  
+
+
+[![Bitdeli Badge](https://d2weczhvl823v0.cloudfront.net/kakwa/talend-codegen/trend.png)](https://bitdeli.com/free "Bitdeli Badge")
+
