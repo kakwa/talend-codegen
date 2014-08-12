@@ -1,4 +1,2 @@
-*.class
-!lib/**/*.class
 build/
 jar/
