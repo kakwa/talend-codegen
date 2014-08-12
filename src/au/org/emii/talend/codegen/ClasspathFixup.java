@@ -52,10 +52,10 @@ public class ClasspathFixup {
                         creator.setJobFolerName(jobFolderName);
                     }
                     creator.buildNewJar();
+
+                    FileCopyUtils.copyFolder(String.format("%s/resources/%s", projectDir, jobFolderName), String.format("%s/%s", tmpFolder, jobFolderName));
                 }
             }
-
-            FileCopyUtils.copyFolder(projectDir + "/resources", tmpFolder);
 
             // Modified by Marvin Wang on Feb.1, 2012 for bug
             if (canCreateNewFile(destinationZipFile)) {
