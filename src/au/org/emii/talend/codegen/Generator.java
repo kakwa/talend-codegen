@@ -93,7 +93,7 @@ public class Generator implements IApplication {
         initCodeGenerationEngine();
         
         // Export the job
-		exportJob(jobName, targetDir, version, exportChoiceMap);
+		exportJob(jobName, projectDir, targetDir, version, exportChoiceMap);
 
 		// Log off the project
 		log.info("Logging off " + project.getLabel() + "...");
@@ -118,7 +118,7 @@ public class Generator implements IApplication {
 	}
 
 	// Build export file
-	private void exportJob(String jobName, String targetDir, String version,
+	private void exportJob(String jobName, String projectDir, String targetDir, String version,
 			Map<ExportChoice, Object> exportChoiceMap) throws ProcessorException, InvocationTargetException, InterruptedException, SystemException, CoreException {
 
 		log.info("Exporting " + jobName + "...");
@@ -151,7 +151,7 @@ public class Generator implements IApplication {
 	        // Rebuild zip file to use classpath jar instead of including all jars in launch script
 	        ClasspathFixup fixup = new ClasspathFixup(manager);
 	         	          	       
-	        fixup.reBuildJobZipFile( resourcesToExport, tempZipFile.getAbsolutePath());
+	        fixup.reBuildJobZipFile( resourcesToExport, tempZipFile.getAbsolutePath(), projectDir);
 	        
 	        System.out.println(String.format("Job exported to \"%s\"", manager.getDestinationPath()));
 		} 
