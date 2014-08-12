@@ -1,0 +1,29 @@
+<%@ jet 
+	package="org.talend.designer.codegen.translators" 
+	imports="
+		org.talend.designer.codegen.config.NodesSubTree
+		org.talend.designer.codegen.config.CodeGeneratorArgument
+	" 
+	class="SubProcessHeader" 
+%>
+<%
+	CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+	NodesSubTree subTree = (NodesSubTree) codeGenArgument.getArgument();
+%>
+
+# +-------------------------------------------------------------------------+
+# | [subprocess header] starts here                                         |
+# +-------------------------------------------------------------------------+ 
+
+	sub <%=subTree.getName() %>_subprocess  {
+<%
+	// Call for RUN AFTER links
+	for (String after : subTree.getAfterSubProcesses()) {
+%>
+		<%=after %>_subprocess();
+<%
+	}
+%>
+# +-------------------------------------------------------------------------+
+# | [subprocess header] stops here                                          |
+# +-------------------------------------------------------------------------+ 

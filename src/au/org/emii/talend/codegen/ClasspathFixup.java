@@ -4,9 +4,6 @@ import java.io.File;
 import java.io.IOException;
 import java.util.List;
 
-import org.eclipse.jface.dialogs.MessageDialog;
-import org.eclipse.ui.PlatformUI;
-import org.talend.commons.ui.runtime.exception.ExceptionHandler;
 import org.talend.repository.documentation.ExportFileResource;
 import org.talend.repository.ui.utils.ZipToFile;
 import org.talend.repository.ui.wizards.exportjob.JavaJobExportReArchieveCreator;
@@ -42,7 +39,7 @@ public class ClasspathFixup {
             ZipToFile.unZipFile(zipFile, tmpFolder);
             // build new jar
             for (ExportFileResource process : processes) {
-                if (process != null) {
+                if (process != null && process.getDirectoryName() != null) {
                     String jobFolderName = process.getDirectoryName();
                     int pos = jobFolderName.indexOf("/"); //$NON-NLS-1$
                     if (pos != -1) {
@@ -61,11 +58,10 @@ public class ClasspathFixup {
                 // rezip the tmpFolder to zipFile
                 ZipToFile.zipFile(tmpFolder, destinationZipFile);
             } else {
-                MessageDialog.openError(PlatformUI.getWorkbench().getDisplay().getActiveShell(), "Can not create a file",
-                        "Can not create a file or have not the permission to create a file!");
+                System.out.println("Can not create a file or have not the permission to create a file! Does the destination directory exist?");
             }
         } catch (Exception e) {
-            ExceptionHandler.process(e);
+            System.out.println("" + e);
         } finally {
             JavaJobExportReArchieveCreator.deleteTempFiles();
             JavaJobExportReArchieveCreator.deleteTempDestinationFiles();
@@ -85,10 +81,10 @@ public class ClasspathFixup {
         File disZipFile = new File(disZipFileStr);
         if (!disZipFile.exists()) {
             try {
+                disZipFile.getParentFile().mkdirs();
                 disZipFile.createNewFile();
             } catch (IOException e) {
                 flag = false;
-                ExceptionHandler.process(e);
             }
         }
         return flag;

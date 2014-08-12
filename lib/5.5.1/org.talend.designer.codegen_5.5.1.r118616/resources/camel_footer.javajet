@@ -1,0 +1,339 @@
+<%@ jet
+	imports="
+		org.talend.core.model.process.IProcess
+		org.talend.core.model.process.INode
+		org.talend.core.model.process.IConnection 
+		org.talend.core.model.process.EConnectionType
+		org.talend.core.model.process.ElementParameterParser
+		org.talend.designer.codegen.config.CodeGeneratorArgument
+		org.talend.core.model.utils.JavaResourcesHelper
+		java.util.Vector
+		java.util.List
+		java.util.Map
+	"
+%>
+<%
+	CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+	 Vector v = (Vector) codeGenArgument.getArgument();
+	IProcess process = (IProcess)v.get(0);
+	
+	String jobFolderName = JavaResourcesHelper.getJobFolderName(process.getName(), process.getVersion());
+	String packageName = codeGenArgument.getCurrentProjectName().toLowerCase() + "." + jobFolderName;
+	
+	boolean stats = codeGenArgument.isStatistics();
+%>
+
+		}
+		
+		private MainSupport mainSupport = null;
+		private void run() throws java.lang.Exception{
+			
+			mainSupport = new MainSupport(){
+		
+		/**
+		* create a fully configured CameContext and add into map
+		* the Registry of it is #<%=process.getName()%>_Registry
+		* @return 
+		*		<code>key: <%=process.getName()%>-ctx<code>
+		*       <code>value: DefaultCamelContext<code>
+		* 
+		*/
+		public Map<String, CamelContext> getCamelContextMap() {
+			Map<String,CamelContext> answer = new HashMap<String, CamelContext>();
+			DefaultCamelContext camelContext = null;
+			if(bundleContext != null){
+				org.apache.camel.spring.SpringCamelContext.setNoStart(true);
+				CamelContextFactoryBean contextFactory = new CamelContextFactoryBean();
+				contextFactory.setId("<%=process.getName()%>-ctx");
+				OsgiBundleXmlApplicationContext appContext = new OsgiBundleXmlApplicationContext(
+						new String[]{"META-INF/spring/<%=process.getName().toLowerCase()%>.xml"});
+				appContext.setBundleContext(bundleContext);
+				appContext.refresh();
+				contextFactory.setApplicationContext(appContext);
+				contextFactory.setBundleContext(bundleContext);
+				camelContext = contextFactory.getContext(true);
+				bundleContext.registerService(CamelContext.class.getName(), camelContext, null);
+			}else{
+				SpringCamelContextFactory contextFactory = new SpringCamelContextFactory();
+				contextFactory.setApplicationContext(new ClassPathXmlApplicationContext("META-INF/spring/<%=process.getName().toLowerCase()%>.xml"));
+				camelContext = contextFactory.createContext();
+				camelContext.setName("<%=process.getName()%>-ctx");
+			}
+<%		
+			//process cConfig components first 
+			List<? extends INode> camelContextNodes = process.getNodesOfType("cConfig");
+			for(INode node: camelContextNodes){
+%>
+			    <%=ElementParameterParser.getValue(node, "__CODE__")%>
+<%
+			} 
+%>
+			<%=process.getName()%>_Registry contextRegister = new <%=process.getName()%>_Registry(camelContext.getRegistry());
+			camelContext.setRegistry(contextRegister);
+
+<%
+			boolean isStudioEEVersion = org.talend.core.PluginChecker.isTIS();
+			List<? extends INode> cxfNodes = process.getNodesOfType("cCXF");
+			if( null != cxfNodes && cxfNodes.size() >0 ){
+				boolean hasCXFConsumer = false;
+				boolean hasCXFSAMLProvider = false;
+				for(INode n: cxfNodes){
+					int incomingConnections = n.getIncomingConnections().size();
+					if(incomingConnections > 0){
+						hasCXFConsumer = true;
+					}else{
+						String dataformat = ElementParameterParser.getValue(n, "__DATAFORMAT__");
+						
+						String useServiceRegistry = ElementParameterParser.getValue(n, "__ENABLE_REGISTRY__");
+						if(!isStudioEEVersion || "RAW".equals(dataformat) || "CXF_MESSAGE".equals(dataformat)){
+							useServiceRegistry = "false";
+						}
+						
+						String useSecurity = ElementParameterParser.getValue(n, "__ENABLE_SECURITY__");
+						if("true".equals(useServiceRegistry) || "RAW".equals(dataformat) || "CXF_MESSAGE".equals(dataformat)){
+							useSecurity = "false";
+						}
+						
+						if("true".equals(useServiceRegistry) || ("true".equals(useSecurity) && "SAML".equals(ElementParameterParser.getValue(n, "__SECURITY_TYPE__")))){
+							hasCXFSAMLProvider = true;
+						}
+						if(hasCXFConsumer && hasCXFSAMLProvider){
+							break;
+						}
+					}
+				}
+				if(hasCXFConsumer){
+%>
+					contextRegister.register("CXF_PAYLOAD_HEADER_FILTER", consumerSoapHeaderFilter);
+<%
+				}
+				if(hasCXFSAMLProvider){
+%>
+					contextRegister.register("DEFAULT_CXF_BINDING", new CXFProviderBinding());
+<%				}
+			}
+			
+			//then process cBeanRegister components
+			List<? extends INode> beanRegisterNodes = process.getNodesOfType("cBeanRegister");
+			if(beanRegisterNodes != null && beanRegisterNodes.size()>0){
+			for(INode node: beanRegisterNodes){
+				String id = ElementParameterParser.getValue(node, "__ID__");
+				String isSimple = ElementParameterParser.getValue(node, "__SIMPLE_CONFIG__");
+				String classQualifiedName = ElementParameterParser.getValue(node, "__CLASS_QUALIFIED_NAME__");
+				String hasArguments = ElementParameterParser.getValue(node, "__SPECIFY_ARGUMENTS__");
+				List<Map<String, String>> arguments = (List<Map<String, String>>) ElementParameterParser.getObjectValue(node, "__ARGUMENTS__");
+				
+				String code = ElementParameterParser.getValue(node, "__CODE__");
+				
+				if("true".equals(isSimple)){
+					StringBuilder sb = new StringBuilder();
+					if("true".equals(hasArguments)){
+						for(Map<String, String> s: arguments){
+							if(sb.length() == 0){
+								sb.append(s.get("VALUE"));
+							}else{
+								sb.append(",");
+								sb.append(s.get("VALUE"));
+							}
+						}
+					}
+%>
+					contextRegister.register(<%=id%>, new <%=classQualifiedName%>(<%=sb.toString()%>));
+<%
+				}else{
+%>
+				{
+					Object beanInstance = null;
+					<%=code%>
+					if(beanInstance != null){
+						contextRegister.register(<%=id%>, beanInstance);
+					}
+				}
+<%
+				}
+			}
+			}
+			
+			//after, process cDataset 
+			List<? extends INode> datasetNodes = process.getNodesOfType("cDataset");
+			for(INode n: datasetNodes){
+				String beanID = ElementParameterParser.getValue(n, "__DATASET_NAME__");
+				String registerNewBean = ElementParameterParser.getValue(n, "__REGISTER_DATASET_BEAN__");
+				if(!"true".equals(registerNewBean)){
+					continue;
+				}
+				String beanClass = ElementParameterParser.getValue(n, "__BEAN_CLASS__");
+				List<Map<String, String>> beanArguments = (List<Map<String, String>>) ElementParameterParser.getObjectValue(n, "__BEAN_ARGUMENTS__");
+				StringBuilder sb = new StringBuilder();
+				if(beanArguments != null){
+					for(Map<String,String> map: beanArguments){
+						if(sb.length() == 0){
+							sb.append(map.get("VALUE"));
+						}else{
+							sb.append(",");
+							sb.append(map.get("VALUE"));
+						}
+					}
+				}
+%>
+				contextRegister.register(<%=beanID%>, new <%=beanClass%>(<%=sb.toString()%>));
+<%
+			}
+            //cJMSConnectionFactory http://jira.talendforge.org/browse/TESB-4860
+			List<? extends INode> jmsCFNodes = process.getNodesOfType("cJMSConnectionFactory");
+			for(INode node: jmsCFNodes){
+				//Use transaction http://jira.talendforge.org/browse/TESB-5160 By LiXiaopeng
+				String useTransaction = ElementParameterParser.getValue(node, "__USE_TRANSACTION__");
+				String transactedMethodStr = "";
+				if("true".equals(useTransaction)){
+					transactedMethodStr = "Transacted";
+				}
+			
+				//Component Name
+				String name = node.getUniqueName().replace("_", "");
+				name = "\"" + name + "\"";
+				    // ElementParameterParser.getValue(node, "__NAME__").trim();
+    				//Remove unnecessary subfix
+    				//name += "+";
+    				//name += ElementParameterParser.getValue(node, "__SUBFIX__").trim();
+			
+				//ActiveMQ
+				String mqType = ElementParameterParser.getValue(node, "__MQ_TYPE__");
+				if("ActiveMQ".equals(mqType)){
+					String amqUri = ElementParameterParser.getValue(node, "__AMQ_BROKER_URI__").trim();
+					
+%>
+				{
+				javax.jms.ConnectionFactory jmsConnectionFactory = new org.apache.activemq.ActiveMQConnectionFactory(<%=amqUri%>);
+<%
+				String amqPool = ElementParameterParser.getValue(node, "__AMQ_POOL__").trim();
+				if("true".equals(amqPool)){
+				     String amq_pool_max_connections = ElementParameterParser.getValue(node, "__AMQ_POOL_MAX_CONNECTIONS__").trim();
+				     String amq_pool_max_active = ElementParameterParser.getValue(node, "__AMQ_POOL_MAX_ACTIVE__").trim();
+				     String amq_pool_idle_timeout = ElementParameterParser.getValue(node, "__AMQ_POOL_IDLE_TIMEOUT__").trim();
+				     String amq_pool_expiry_timeout = ElementParameterParser.getValue(node, "__AMQ_POOL_EXPIRY_TIMEOUT__").trim();
+				     
+				     if(amq_pool_max_connections.startsWith("\"")){
+						 amq_pool_max_connections = amq_pool_max_connections.substring(1);
+					 }
+					 if(amq_pool_max_connections.endsWith("\"")){
+						 amq_pool_max_connections = amq_pool_max_connections.substring(0, amq_pool_max_connections.length() - 1);
+					 }
+				     if(amq_pool_max_active.startsWith("\"")){
+						 amq_pool_max_active = amq_pool_max_active.substring(1);
+					 }
+					 if(amq_pool_max_active.endsWith("\"")){
+						 amq_pool_max_active = amq_pool_max_active.substring(0, amq_pool_max_active.length() - 1);
+					 }
+				     if(amq_pool_idle_timeout.startsWith("\"")){
+						 amq_pool_idle_timeout = amq_pool_idle_timeout.substring(1);
+					 }
+					 if(amq_pool_idle_timeout.endsWith("\"")){
+						 amq_pool_idle_timeout = amq_pool_idle_timeout.substring(0, amq_pool_idle_timeout.length() - 1);
+					 }
+				     if(amq_pool_expiry_timeout.startsWith("\"")){
+						 amq_pool_expiry_timeout = amq_pool_expiry_timeout.substring(1);
+					 }
+					 if(amq_pool_expiry_timeout.endsWith("\"")){
+						 amq_pool_expiry_timeout = amq_pool_expiry_timeout.substring(0, amq_pool_expiry_timeout.length() - 1);
+					 }
+%>
+				org.apache.activemq.pool.PooledConnectionFactory pooledConnectionFactory_<%=node.getUniqueName()%> 
+					= new org.apache.activemq.pool.PooledConnectionFactory();
+				pooledConnectionFactory_<%=node.getUniqueName()%>.setConnectionFactory(jmsConnectionFactory);
+				pooledConnectionFactory_<%=node.getUniqueName()%>.setExpiryTimeout(<%=amq_pool_expiry_timeout%>L);
+				pooledConnectionFactory_<%=node.getUniqueName()%>.setIdleTimeout(<%=amq_pool_idle_timeout%>);
+				pooledConnectionFactory_<%=node.getUniqueName()%>.setMaxConnections(<%=amq_pool_max_connections%>);
+				pooledConnectionFactory_<%=node.getUniqueName()%>.setMaximumActive(<%=amq_pool_max_active%>);
+				camelContext.addComponent(<%=name%>,
+					org.apache.camel.component.jms.JmsComponent.jmsComponent<%=transactedMethodStr%>(pooledConnectionFactory_<%=node.getUniqueName()%>));	
+<%
+					 
+				}else{
+%>				
+				camelContext.addComponent(<%=name%>,
+					org.apache.camel.component.jms.JmsComponent.jmsComponent<%=transactedMethodStr%>(jmsConnectionFactory));
+<%				
+				    }
+%>
+				}
+<%
+				}else if("WebSphere MQ".equals(mqType)){
+					String wmqServer = ElementParameterParser.getValue(node, "__WQM_SEVER__");
+					String wmqPort = ElementParameterParser.getValue(node, "__WMQ_PORT__");
+					String wmqTransportType = ElementParameterParser.getValue(node, "__WMQ_TRANSPORT_TYPE__");
+					String wmqUM = ElementParameterParser.getValue(node, "__WMQ_QUEUE_MANAGER__");
+					
+					//Username and password, http://jira.talendforge.org/browse/TESB-4073
+					String username = ElementParameterParser.getValue(node, "__WMQ_USERNAME__");
+					String useAuth = ElementParameterParser.getValue(node, "__WMQ_AUTH__");
+					
+					if(wmqPort.startsWith("\"")){
+						wmqPort = wmqPort.substring(1);
+					}
+					if(wmqPort.endsWith("\"")){
+						wmqPort = wmqPort.substring(0, wmqPort.length() - 1);
+					}
+					if(wmqTransportType.startsWith("\"")){
+						wmqTransportType = wmqTransportType.substring(1);
+					}
+					if(wmqTransportType.endsWith("\"")){
+						wmqTransportType = wmqTransportType.substring(0, wmqTransportType.length() - 1);
+					}
+					
+%>
+					{
+					javax.jms.ConnectionFactory jmsConnectionFactory = new com.ibm.mq.jms.MQQueueConnectionFactory();
+	       			((com.ibm.mq.jms.MQConnectionFactory) jmsConnectionFactory).setHostName(<%=wmqServer%>);
+	       			try {
+	       				((com.ibm.mq.jms.MQConnectionFactory) jmsConnectionFactory).setPort(<%=wmqPort%>);
+	       				((com.ibm.mq.jms.MQConnectionFactory) jmsConnectionFactory).setTransportType(<%=wmqTransportType%>);
+	       				((com.ibm.mq.jms.MQConnectionFactory) jmsConnectionFactory).setQueueManager(<%=wmqUM%>);	
+	       			} catch (javax.jms.JMSException e) {
+						e.printStackTrace();
+					}
+<%
+					if("false".equals(useAuth)){
+%>
+					camelContext.addComponent(<%=name%>,
+						org.apache.camel.component.jms.JmsComponent.jmsComponent<%=transactedMethodStr%>(jmsConnectionFactory));
+<%					
+					}else{
+%>
+					org.springframework.jms.connection.UserCredentialsConnectionFactoryAdapter connectionFactoryAdapter<%=node.getUniqueName()%> 
+							= new org.springframework.jms.connection.UserCredentialsConnectionFactoryAdapter();
+       				connectionFactoryAdapter<%=node.getUniqueName()%>.setUsername(<%=username%>);
+                    <%
+                    String cid = node.getUniqueName();
+                    String passwordFieldName = "__WMQ_PASSWORD__";
+                    %>
+                    <%@ include file="@{org.talend.designer.components.localprovider}/components/templates/password.javajet"%>
+      				connectionFactoryAdapter<%=node.getUniqueName()%>.setPassword(decryptedPassword_<%=cid%>);
+       				connectionFactoryAdapter<%=node.getUniqueName()%>.setTargetConnectionFactory(jmsConnectionFactory);
+       
+					camelContext.addComponent(<%=name%>,
+						org.apache.camel.component.jms.JmsComponent.jmsComponent<%=transactedMethodStr%>(connectionFactoryAdapter<%=node.getUniqueName()%>));
+<%						
+					}					
+%>
+					}
+<%
+				}else if("Other".equals(mqType)){
+%>
+					{
+					  javax.jms.ConnectionFactory jmsConnectionFactory;
+						<%=ElementParameterParser.getValue(node, "__OTHER_CODE__")%>
+						camelContext.addComponent(<%=name%>,
+							org.apache.camel.component.jms.JmsComponent.jmsComponent<%=transactedMethodStr%>(jmsConnectionFactory));
+					}
+<%
+				}
+			
+			}
+
+			//http://jira.talendforge.org/browse/TESB-4087: Change CamelContext name
+%>
+			//using Route name as CamelContext ID
+			answer.put(camelContext.getName(), camelContext);
+			return answer;
+		}

@@ -41,7 +41,7 @@ public class ProjectUtils {
         String technicalName = getTechnicalName(directory);
 
         // If project exists in repository already, delete it
-       	deleteIfExists(technicalName);
+//       	deleteIfExists(technicalName);
        	
         IImportStructureProvider provider = FilterFileSystemStructureProvider.INSTANCE;
 

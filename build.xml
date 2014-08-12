@@ -36,8 +36,18 @@
             <src path="src"/>
             <classpath refid="talend-codegen.classpath"/>
         </javac>
+
+        <zip destfile="build/org.talend.core.ui.jar">
+            <zipfileset src="lib/${talend_version}/org.talend.core.ui_${talend_version}.r${talend_revision}.jar">
+                <include name="org/**" />
+            </zipfileset> 
+        </zip>
+
         <copy file="./plugin.xml" todir="build/classes"/>
-        <jar manifest="META-INF/MANIFEST.MF" destfile="./jar/talend-codegen_${talend_version}.jar" basedir="build/classes"/>
+        <jar manifest="META-INF/MANIFEST.MF" destfile="./jar/talend-codegen_${talend_version}.jar" basedir="build/classes">
+            <zipgroupfileset dir="build" includes="org.talend.core.ui.jar" />
+        </jar>
+
     </target>
     <target description="Build all projects which reference this project. Useful to propagate changes." name="build-refprojects"/>
 </project>

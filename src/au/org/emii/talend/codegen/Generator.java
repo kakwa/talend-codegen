@@ -143,7 +143,7 @@ public class Generator implements IApplication {
 			
 			File tempZipFile = createTempFile(); 
 			 				 			  
-			manager.setTopFolder(resourcesToExport);
+//			manager.setTopFolder(resourcesToExport);
 			 
 			// Add resources built to archive
 	        createArchive( tempZipFile.getAbsolutePath(), resourcesToExport );
@@ -153,6 +153,7 @@ public class Generator implements IApplication {
 	         	          	       
 	        fixup.reBuildJobZipFile( resourcesToExport, tempZipFile.getAbsolutePath());
 	        
+	        System.out.println(String.format("Job exported to \"%s\"", manager.getDestinationPath()));
 		} 
 		finally {
 	        // Cleanup
