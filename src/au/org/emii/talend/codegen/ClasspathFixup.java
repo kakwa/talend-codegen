@@ -4,6 +4,7 @@ import java.io.File;
 import java.io.IOException;
 import java.util.List;
 
+import org.talend.core.model.genhtml.FileCopyUtils;
 import org.talend.repository.documentation.ExportFileResource;
 import org.talend.repository.ui.utils.ZipToFile;
 import org.talend.repository.ui.wizards.exportjob.JavaJobExportReArchieveCreator;
@@ -27,7 +28,7 @@ public class ClasspathFixup {
      * 
      * @param processes
      */
-    public void reBuildJobZipFile(List<ExportFileResource> processes, String zipFile) {
+    public void reBuildJobZipFile(List<ExportFileResource> processes, String zipFile, String projectDir) {
     	//   
         JavaJobExportReArchieveCreator creator = null;        
                       
@@ -53,6 +54,9 @@ public class ClasspathFixup {
                     creator.buildNewJar();
                 }
             }
+
+            FileCopyUtils.copyFolder(projectDir + "/resources", tmpFolder);
+
             // Modified by Marvin Wang on Feb.1, 2012 for bug
             if (canCreateNewFile(destinationZipFile)) {
                 // rezip the tmpFolder to zipFile
