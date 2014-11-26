@@ -1,0 +1,168 @@
+<%@ jet 
+package="org.talend.designer.codegen.translators" 
+imports="
+    org.talend.core.model.process.IProcess
+    org.talend.core.model.process.INode 
+    org.talend.designer.codegen.config.CodeGeneratorArgument
+    org.talend.core.model.process.IConnection
+    org.talend.core.model.process.EConnectionType
+    java.util.Vector
+    java.util.List
+    java.util.ArrayList
+" 
+class="Footer" 
+%>
+<%
+CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+Vector v = (Vector) codeGenArgument.getArgument();
+IProcess process = (IProcess)v.get(0);
+List<INode> rootNodes = (List<INode>)v.get(1);
+
+boolean stats = codeGenArgument.isStatistics();
+boolean trace = codeGenArgument.isTrace();
+boolean isRunInMultiThread = codeGenArgument.getIsRunInMultiThread();
+%>
+
+# +-------------------------------------------------------------------------+
+# | [footer] starts here                                                    |
+# +-------------------------------------------------------------------------+ 
+
+<%
+if (stats) {
+%>
+StartStat($opt{stat_port}, $clientHost) if defined $opt{stat_port};
+<%
+}
+%>
+
+my $pid = undef;
+
+<%
+List<String> subjobs = new ArrayList<String>();
+String prejob = null;
+String postjob = null;
+boolean isFirstSubjob = true;
+
+for (INode rootNode : rootNodes) {
+    String componentName = (String) rootNode.getComponent().getName();
+
+    if (componentName.equals("tPrejob")) {
+        prejob = rootNode.getUniqueName() + "_subprocess()";
+        continue;
+    }
+
+    if (componentName.equals("tPostjob")) {
+        postjob = rootNode.getUniqueName() + "_subprocess()";
+        continue;
+    }
+
+    // we don't launch the "parallelized" subjobs, tSynchronize do it better
+    // than we do here.
+    boolean isParallelized = false;
+    for (IConnection conn : rootNode.getOutgoingConnections()) {
+        EConnectionType lineStyle = conn.getLineStyle();
+
+        if (lineStyle.equals(EConnectionType.SYNCHRONIZE)) {
+            isParallelized = true;
+        }
+    }
+    if (isParallelized) {
+        continue;
+    }
+
+    if (!componentName.equals("tLogCatcher")
+        && !componentName.equals("tFlowMeterCatcher")
+        && !componentName.equals("tAssertCatcher")
+        && !componentName.equals("tStatCatcher")
+        && !componentName.equals("tLibraryLoad")) {
+        subjobs.add(rootNode.getUniqueName() + "_subprocess()");
+    }
+}
+
+if (prejob != null) {
+%>
+<%=prejob%>;
+<%
+}
+
+if (subjobs.size() == 1) {
+%>
+<%=subjobs.get(0)%>;
+<%
+}
+else {
+    for (String subjob : subjobs) {
+        if (isRunInMultiThread) {
+            String operator = "elsif";
+            if (isFirstSubjob) {
+                operator = "if";
+                isFirstSubjob = false;
+            }
+%>
+<%=operator%> (not ($pid = fork)) {
+    <%=subjob%>;
+    exit();
+}
+<%            
+        }
+        else {
+%>
+<%=subjob%>;
+<%
+        }        
+    }
+}
+
+if (isRunInMultiThread && subjobs.size() > 1) {
+%>
+1 while wait_for_a_kid();
+<%
+}
+
+if (postjob != null) {
+%>
+<%=postjob%>;
+<%
+}
+%>
+
+$_globals{stop} = [gettimeofday];
+
+$_globals{duration} = int(
+    tv_interval(
+        $_globals{start},
+        $_globals{stop}
+    )
+    * 1000
+);
+
+
+<%
+for (INode statCatcher : process.getNodesOfType("tStatCatcher")) {
+%>
+<%=statCatcher.getUniqueName()%>_subprocess(
+    message_type => 'end',
+    message => 'success',
+    duration => $_globals{duration}
+);
+<%
+}
+%>
+
+if (defined $opt{watch}) {
+    printf(
+        "===\nexecution time: %u milliseconds\n===\n",
+        $_globals{duration}
+    );
+}
+
+sub wait_for_a_kid
+{
+  my $pid = wait;
+  return 0 if $pid < 0;
+  1;
+}
+
+# +-------------------------------------------------------------------------+
+# | [footer] stops here                                                     |
+# +-------------------------------------------------------------------------+ 

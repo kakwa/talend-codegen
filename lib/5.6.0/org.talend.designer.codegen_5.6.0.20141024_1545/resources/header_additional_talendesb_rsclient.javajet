@@ -1,0 +1,38 @@
+<%@ jet
+    package="org.talend.designer.codegen.translators.common"
+    imports="
+        java.util.Vector
+        java.util.List
+
+        org.talend.core.model.process.INode
+        org.talend.core.model.process.IProcess
+		org.talend.core.model.process.ElementParameterParser
+
+        org.talend.designer.codegen.config.CodeGeneratorArgument
+    "
+    class="Header_additional"
+%>
+<%
+CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+Vector v = (Vector) codeGenArgument.getArgument();
+IProcess process = (IProcess) v.get(0);
+
+boolean useSAML = false;
+
+List<? extends INode> restClients = process.getNodesOfType("tRESTClient");
+for (INode restClient : restClients) {
+	boolean useAuth = Boolean.valueOf(ElementParameterParser.getValue(restClient, "__NEED_AUTH__"));
+	String authType = ElementParameterParser.getValue(restClient, "__AUTH_TYPE__");
+	if (useAuth && "SAML".equals(authType)) {
+		useSAML = true;
+		break;
+	}
+}
+
+if (useSAML) { %>
+private java.util.Map<String, String> stsProperties;
+
+public void setStsProperties(java.util.Map<String, String> stsProperties) {
+		this.stsProperties = stsProperties;
+}
+<% } %>

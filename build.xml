@@ -2,15 +2,15 @@
 <project basedir="." default="build" name=" talend-codegen">
     <property environment="env"/>
     <property name="debuglevel" value="source,lines,vars"/>
-    <property name="target" value="1.5"/>
-    <property name="source" value="1.5"/>
-    <property name="talend_version" value="5.3.1"/>
-    <property name="talend_revision" value="104014"/>
+    <property name="target" value="1.6"/>
+    <property name="source" value="1.6"/>
+    <property name="talend_version" value="5.6.0"/>
+    <property name="talend_revision" value="20141024_1545"/>
     <path id="talend-codegen.classpath">
         <fileset dir="lib/${talend_version}/">
           <include name="*.jar"/>
       </fileset>
-      <pathelement path="lib/${talend_version}/org.talend.designer.codegen_${talend_version}.r${talend_revision}/" />
+      <pathelement path="lib/${talend_version}/org.talend.designer.codegen_${talend_version}.${talend_revision}/" />
     </path>
     <target name="init">
         <mkdir dir="build/classes"/>
@@ -38,7 +38,7 @@
         </javac>
 
         <zip destfile="build/org.talend.core.ui.jar">
-            <zipfileset src="lib/${talend_version}/org.talend.core.ui_${talend_version}.r${talend_revision}.jar">
+            <zipfileset src="lib/${talend_version}/org.talend.core.ui_${talend_version}.${talend_revision}.jar">
                 <include name="org/**" />
             </zipfileset> 
         </zip>
