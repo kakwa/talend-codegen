@@ -13,20 +13,20 @@ Build:
 > make
 
 #ls in the out directory
->ls jar/talend-codegen_5.5.1.jar
+>ls jar/talend-codegen_5.6.0.jar
 
 #build an older version
 >make build_jar_5.4.1
 
 #build directly with ant:
 > cat Makefile
-build_jar_5.5.1:
-    ant build -Dtalend_version=5.5.1 -Dtalend_revision=118616
-clean_5.5.1:
-    ant clean -Dtalend_version=5.5.1 -Dtalend_revision=118616
+build_jar_5.6.0:
+	ant build -Dtalend_version=5.6.0 -Dtalend_revision=20141024_1545
+clean_5.6.0:
+	ant clean -Dtalend_version=5.6.0 -Dtalend_revision=20141024_1545
 
 #select your version
-> ant build -Dtalend_version=5.5.1 -Dtalend_revision=118616
+> ant build -Dtalend_version=5.5.1 -Dtalend_revision=r118616
 ```
 
 And copy `jar/talend-codegen<version>.jar` to the plugins directory of Talend.
@@ -71,7 +71,7 @@ export COMPONENTDIR=/home/projectname/custom_components
 
 cp $PROJECTDIR/libs/* /home/TOS_DI-r118616-V5.5.1/lib/java/
 
-/home/TOS_DI-r118616-V5.5.1/TOS_DI-linux-gtk-x86_64 -nosplash --launcher.suppressErrors -data $WORKSPACE -application au.org.emii.talend.codegen.Generator -jobName $JOBNAME -projectDir $PROJECTDIR -targetDir $TARGETDIR -componentDir $COMPONENTDIR
+/home/TOS_DI-20141024_1545-V5.6.0/TOS_DI-linux-gtk-x86_64 -nosplash --launcher.suppressErrors -data $WORKSPACE -application au.org.emii.talend.codegen.Generator -jobName $JOBNAME -projectDir $PROJECTDIR -targetDir $TARGETDIR -componentDir $COMPONENTDIR
 ``` 
 
 
