@@ -114,8 +114,7 @@ Some optional command line arguments you can have:
  * -needContext
  * -applyToChildren
 
-Example
--------
+Example:
 ```bash
 export JOBNAME=MyJob
 export WORKSPACE=/home/projectname/workspace
