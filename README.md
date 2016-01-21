@@ -41,10 +41,10 @@ This script must be modify to reflect your Talend installation (TALEND_DIR and T
 Generation:
 ```bash
 # With all '-need' options enabled 
-$ talend-codegen -p ./MyProjectDir/ -o out/ -j MyJobName -a
+$ talend-codegen -p './MyProjectDir/' -o './out/' -j './MyJobName' -a
 
 # With custom options
-$ talend-codegen -p ./MyProjectDir/ -o out/ -j MyJobName -O '-needLauncher=true -needDependencies=true'
+$ talend-codegen -p './MyProjectDir/' -o out/ -j 'MyJobName' -O '-needLauncher=true -needDependencies=true'
 ```
 
 help:
