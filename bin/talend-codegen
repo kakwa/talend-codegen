@@ -1,0 +1,115 @@
+#!/bin/sh
+
+# Modify according to your environnement
+TALEND_DIR="${HOME}/TOS_DI-r95165-V5.2.1"
+TALEND_BIN="${TALEND_DIR}/TOS_DI-linux-gtk-x86_64"
+
+exit_error(){
+    msg_error "${1}"
+    exit 1
+}
+
+msg_error(){
+    msg="$1"
+    printf "[ERROR] %s\n" "${msg}" 1>&2
+}
+
+msg_info(){
+    msg="$1"
+    printf "[INFO] %s\n" "${msg}"
+}
+
+clean(){
+    [ -d "$tmpdir" ] && rm -rf $tmpdir
+}
+
+help(){
+  cat <<EOF
+usage: `basename $0` -p <project dir> -o <out dir> -j <job name> \\
+                    [-a] [-O <custom options>] [-T <talend dir>] [-c <comp dir>]
+
+Build Talend project from command line
+
+examples:
+ * `basename $0` -p ./MyProjectDir/ -o out/ -j MyJobName -a
+ * `basename $0` -p ./MyProjectDir/ -o out/ -j MyJobName -O '-needLauncher=true -needDependencies=true'
+
+arguments:
+  -p <project dir>: directory containing the talend project
+  -j <job id>: job to export
+  -o <out dir>: output directory
+
+optional arguments:
+  -a:                  enable all -need* options
+  -O <custom options>: custom options (cannot be used with -a)
+  -T <talend dir>:     talend install directory (default: $TALEND_DIR)
+  -c <comp dir>:       location of any custom components used in the job
+
+codegen options (for -O):
+ * -version - version of job to be exported
+ * -needLauncher - include launcher script (true/false)
+ * -needSystemRoutine - include system outines (true/false)
+ * -needUserRoutine - and so on..
+ * -needTalendLibraries
+ * -needJobItem
+ * -needSourceCode
+ * -needDependencies
+ * -needJobScript
+ * -needContext
+ * -applyToChildren
+EOF
+  exit 1
+}
+
+COMPDIR="${TALEND_DIR}/plugins/"
+
+while getopts ":hsap:j:o:O:t:T:c:" opt; do
+  case $opt in
+    h)  help;;
+    a)  NEED_OPTS="-needSourceCode true -needLauncher true \
+-needSystemRoutine true -needUserRoutine true -needTalendLibraries true \
+-needJobItem true -needDependencies true -needJobScript true -needContext true -applyToChildren true";;
+    p)  PROJECT_DIR="$OPTARG";;
+    j)  JOB_NAME="$OPTARG";;
+    o)  OUT_DIR="$OPTARG";;
+    O)  OPTS="$OPTARG";;
+    t)  export TMPDIR="$OPTARG";;
+    T)  TALEND_DIR="$OPTARG";;
+    c)  COMPDIR="$OPTARG";;
+    \?) echo "Invalid option: -$OPTARG" >&2 ;help; exit 1 ;;
+    :)  echo "Option -$OPTARG requires an argument." >&2; help; exit 1;;
+  esac
+done
+
+[ -f "${TALEND_BIN}" ] || exit_error "Talend directory is not correct (please set -T <talend dir> correctly)"
+[ -d "${PROJECT_DIR}" ] || exit_error "Project directory missing (please set -p <project dir> correctly)"
+[ -d "${OUT_DIR}" ] || exit_error "Out directory missing (please set -o <out dir> correctly)"
+! [ -z "${JOB_NAME}" ] || exit_error "Missing Job Name (please set -j <job name> correctly)"
+
+if ! [ -z "${NEED_OPTS}" ] && ! [ -z "$OPTS" ]
+then
+    exit_error "option -a and option -O cannot be set simultaneously"
+fi
+
+tmpdir=`mktemp -d`
+
+trap clean HUP INT TERM
+
+msg_info "Starting build of job '${JOB_NAME}' in project '${PROJECT_DIR}'"
+${TALEND_BIN} -nosplash --launcher.suppressErrors \
+    -application au.org.emii.talend.codegen.Generator \
+    --clean_component_cache \
+    -data $tmpdir \
+    -jobName $JOB_NAME -projectDir $PROJECT_DIR -targetDir $OUT_DIR $NEED_OPTS \
+    -componentDir ${COMPDIR} $OPTS
+ret=$?
+
+if [ $ret -eq 0 ]
+then
+    msg_info "Build of of job '${JOB_NAME}' in project '${PROJECT_DIR}' succeed"
+else
+    cat $tmpdir/.metadata/.log 1>&2
+    msg_error "Build of of job '${JOB_NAME}' in project '${PROJECT_DIR}' failed"
+fi
+clean
+exit $ret
