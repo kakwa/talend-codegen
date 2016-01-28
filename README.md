@@ -47,7 +47,7 @@ $ mkdir -p './out'
 $ talend-codegen -p './MyProjectDir/' -o './out/' -j './MyJobName' -a
 
 # With custom options
-$ talend-codegen -p './MyProjectDir/' -o './out/' -j 'MyJobName' -O '-needLauncher=true -needDependencies=true'
+$ talend-codegen -p './MyProjectDir/' -o './out/' -j 'MyJobName' -O '-needLauncher=true -needContext=true'
 ```
 
 help:
